@@ -768,7 +768,7 @@ curl -fsS -H "$AUTH" "$CF/accounts/$(wrangler whoami 2>&1 | grep -oE '[0-9a-f]{3
 printf 'Email Sending edit (email:onboard)..... '
 RESP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -H "$AUTH" "$CF/zones/$ZONE_ID/email/sending/subdomains")
 [ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — run: mise run cf:token:edit)"
-printf 'Turnstile Sites edit (cf:turnstile:*).. '
+printf 'Turnstile edit        (cf:turnstile:*).. '
 ACCT_ID=$(wrangler whoami 2>&1 | grep -oE '[0-9a-f]{32}' | head -1)
 RESP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -H "$AUTH" "$CF/accounts/$ACCT_ID/challenges/widgets")
 [ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — run: mise run cf:token:edit)"
@@ -802,7 +802,7 @@ cat <<'HEREDOC'
     • D1                         : Edit
     • Email Routing Addresses    : Edit
     • Email Sending              : Edit
-    • Turnstile Sites            : Edit       ← needed by cf:turnstile:* tasks
+    • Turnstile                  : Edit       ← needed by cf:turnstile:* tasks
     • Account Settings           : Read
 
   Zone permissions (for ubuntusoftware.net):
@@ -847,7 +847,7 @@ without you clicking in the dashboard each time):
     • D1                         : Edit       (auth-better-db migrations)
     • Email Routing Addresses    : Edit       (verified-destinations list)
     • Email Sending              : Edit       (new CF Email Service)
-    • Turnstile Sites            : Edit       (cf:turnstile:* mise tasks)
+    • Turnstile                  : Edit       (cf:turnstile:* mise tasks)
     • Account Settings           : Read
 
   Zone permissions:
