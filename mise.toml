@@ -236,6 +236,85 @@ echo "$SECRET_VALUE" | wrangler secret put BETTER_AUTH_SECRET --env production
 # (you almost certainly already have it set — that's the same token CF
 # Workers deploy uses).
 
+[tasks."cf:token:check"]
+description = "Verify the current CLOUDFLARE_API_TOKEN has the scopes needed for everything in this repo"
+run = """
+set -euo pipefail
+: "${CLOUDFLARE_API_TOKEN:=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+[ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "✗ CLOUDFLARE_API_TOKEN not set (and not in fnox)"; exit 1; }
+
+CF="https://api.cloudflare.com/client/v4"
+AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+
+echo "== Token identity =="
+TOKEN_INFO=$(curl -sS -H "$AUTH" "$CF/user/tokens/verify")
+echo "$TOKEN_INFO" | jq '.result // .errors'
+
+ZONE_ID=$(curl -fsS -H "$AUTH" "$CF/zones?name=ubuntusoftware.net" | jq -r '.result[0].id')
+echo
+echo "== Scope probe =="
+printf 'Zone read (zones list)................. '
+[ "$ZONE_ID" != "null" ] && echo "✓" || echo "✗"
+printf 'Workers Scripts edit (deploy:web)...... '
+curl -fsS -H "$AUTH" "$CF/accounts/$(wrangler whoami 2>&1 | grep -oE '[0-9a-f]{32}' | head -1)/workers/scripts" >/dev/null 2>&1 && echo "✓" || echo "✗"
+printf 'Email Routing edit (email:onboard)..... '
+RESP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -H "$AUTH" "$CF/zones/$ZONE_ID/email/sending/subdomains")
+[ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — run: mise run cf:token:create)"
+"""
+
+[tasks."cf:token:create"]
+description = "Guide creating a fresh CLOUDFLARE_API_TOKEN with all scopes this repo needs, save to fnox"
+run = """
+set -euo pipefail
+cat <<'EOF'
+
+────────────────────────────────────────────────────────────────────
+  Cloudflare API Token — for joeblew999/auth-service
+────────────────────────────────────────────────────────────────────
+
+We need a token with these scopes (so mise tasks can run end-to-end
+without you clicking in the dashboard each time):
+
+  Account permissions:
+    • Workers Scripts            : Edit       (deploy worker)
+    • Workers KV Storage         : Edit       (session cache)
+    • Workers R2 Storage         : Edit       (only if you add R2 later)
+    • D1                         : Edit       (auth-better-db migrations)
+    • Email Routing Addresses    : Edit       (Email Service onboarding)
+    • Account Settings           : Read
+
+  Zone permissions:
+    • Zone                       : Read       (resolve ubuntusoftware.net)
+    • Workers Routes             : Edit       (custom domains)
+    • Email Routing              : Edit       (Email Sending subdomains)
+    • DNS                        : Edit       (auto-provision SPF/DKIM)
+
+  Zone resources:
+    • Include : Specific zone : ubuntusoftware.net
+
+────────────────────────────────────────────────────────────────────
+EOF
+
+URL="https://dash.cloudflare.com/profile/api-tokens"
+echo "Opening $URL ..."
+echo "  → click 'Create Token' → 'Create Custom Token' → fill in the scopes above"
+( command -v open >/dev/null && open "$URL" ) || true
+
+echo
+read -r -p "Paste the token here (input hidden): " -s NEW_TOKEN
+echo
+
+[ -n "$NEW_TOKEN" ] || { echo "✗ empty token, aborting"; exit 1; }
+
+# Verify before saving — fail fast on a bad paste.
+VERIFY=$(curl -sS -H "Authorization: Bearer $NEW_TOKEN" "https://api.cloudflare.com/client/v4/user/tokens/verify" | jq -r '.success')
+[ "$VERIFY" = "true" ] || { echo "✗ token verification failed — not saving"; exit 1; }
+
+echo "✓ Token verified. Saving to fnox..."
+printf '%s' "$NEW_TOKEN" | fnox set CLOUDFLARE_API_TOKEN --global --provider keychain --stdin
+echo "✓ Saved. Run 'mise run cf:token:check' to confirm scopes."
+"""
+
 [tasks."email:onboard"]
 description = "Provision mail.ubuntusoftware.net as the sending subdomain so CF Email Service accepts arbitrary recipients (idempotent)"
 env = { ZONE_NAME = "ubuntusoftware.net", SUBDOMAIN = "mail.ubuntusoftware.net" }
