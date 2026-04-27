@@ -144,10 +144,64 @@ fixture for any new manual or scripted test.
 Manual sign-in:
 - `1234567890@test.ubuntusoftware.net` / *use the value of `TEST_PASSWORD`*
 
+## First-time setup (fresh laptop → everything working)
+
+This repo follows a strict **mise-as-SSOT** convention: install `mise` once,
+and `.mise.toml` provisions every other tool you need (`bun`, `node`,
+`wrangler`, `pitchfork`, `fnox`, `age`, `gh`). Same toolchain CI uses, no
+"works-on-my-machine" version skew, no manual installs of 7 different
+package managers.
+
+### 1. Install `mise` (one-time, per machine)
+
+```sh
+# macOS
+brew install mise
+# OR (any platform)
+curl https://mise.run | sh
+```
+
+Then activate it in your shell — once, in `~/.zshrc` (or `~/.bashrc` /
+`~/.config/fish/config.fish`):
+
+```sh
+eval "$(mise activate zsh)"     # zsh
+eval "$(mise activate bash)"    # bash
+mise activate fish | source     # fish
+```
+
+Restart your shell (or `source ~/.zshrc`).
+
+### 2. Provision the toolchain (in this repo)
+
+```sh
+git clone https://github.com/joeblew999/auth-service && cd auth-service
+mise trust       # one-time, allow this repo's .mise.toml
+mise install     # downloads bun + node + wrangler + pitchfork + fnox + age + gh
+```
+
+### 3. Authenticate
+
+```sh
+wrangler login   # opens browser; OAuths your Cloudflare account
+gh auth login    # opens browser; OAuths your GitHub account
+```
+
+### 4. Set up secrets (fnox + macOS Keychain)
+
+You need `CLOUDFLARE_API_TOKEN` (and optionally `BETTER_AUTH_SECRET`)
+in fnox before deploys can use them. The token bootstrap is wrapped:
+
+```sh
+mise run cf:token:create   # opens browser, prints exact scopes, saves to fnox
+mise run cf:token:check    # verifies the token has every scope this repo needs
+```
+
+That's it. From here on, every command in the repo is `mise run <task>`.
+
 ## Run it (local dev)
 
 ```sh
-mise install          # install tools (pitchfork, bun, node, wrangler, fnox, age)
 mise run 1-install    # install npm deps — first time only
 mise run 2-start      # start worker (:8792) + web (:5174)
 mise run 3-migrate    # create DB schema — first time only
