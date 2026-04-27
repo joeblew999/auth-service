@@ -3,7 +3,7 @@
 pitchfork = "latest"
 bun       = "latest"
 node      = "latest"
-wrangler  = "latest"
+wrangler  = "4.84.1"   # 4.85.0 regression: returns 'Could not route 7003' on `wrangler deploy --env <name>` even when token+account+name all valid. Local 4.84.1 + same creds works fine. Pin until upstream fixes it.
 # fnox: secrets manager by jdx (same author as mise). Encrypts at rest with
 # age, key cached in macOS Keychain. Configured globally so the same secrets
 # are available across every project on this machine.
