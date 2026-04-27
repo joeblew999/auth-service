@@ -1135,6 +1135,25 @@ mise exec -- wrangler d1 execute auth-better-db --remote --env "$ENV" \
 echo "✓ ${EMAIL} promoted to admin. They can now use Better Auth's /admin/* API."
 """
 
+[tasks."users:purge-test"]
+description = "Delete all @test.ubuntusoftware.net users + their orphan orgs (from prove:sso-rbac CI runs). Cascades clean up account/session/member rows automatically."
+shell = "bash -c"
+run = """
+set -eu
+ENV="${ENV:-production}"
+echo "⚠️  This deletes ALL @test.ubuntusoftware.net users AND any 'proveorg-*' orgs in env=$ENV."
+echo "    Used to clean up after prove:sso-rbac CI smoke runs."
+echo
+read -r -p "Type 'purge' to continue: " CONFIRM
+[ "$CONFIRM" = "purge" ] || { echo "Aborted."; exit 0; }
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+ENV="$ENV" mise run wrangler:generate >/dev/null
+cd worker
+mise exec -- wrangler d1 execute auth-better-db --remote --env "$ENV" --command "DELETE FROM organization WHERE slug LIKE 'proveorg-%';"
+mise exec -- wrangler d1 execute auth-better-db --remote --env "$ENV" --command "DELETE FROM user WHERE email LIKE '%@test.ubuntusoftware.net';"
+echo "✓ purged"
+"""
+
 [tasks."users:reset-password"]
 description = "Set a fresh random password for a user. Prints the new password (one-time, no email). Requires the CALLER to be a platform admin. Usage: EMAIL=foo@bar.com mise run users:reset-password"
 shell = "bash -c"
