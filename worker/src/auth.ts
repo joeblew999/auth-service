@@ -14,15 +14,18 @@ export type Bindings = {
   BETTER_AUTH_SECRET: string;
   // Dev only — set in wrangler.toml [vars], not in [env.production]
   AUTH_BETTER_WEB_PORT?: string;
-  // CF Email Service binding — ADR-006
-  // Optional: falls back to console.log when absent (vitest-pool-workers Phase 1 CI)
+  // Cloudflare Email Service (NEW beta API — accepts arbitrary external
+  // recipients once sender domain is onboarded under Email Service > Email
+  // Sending in CF dashboard). NOT the legacy Email Routing send_email
+  // binding (which required destination_address verification + EmailMessage
+  // MIME wrapper). Falls back to console.log when absent (Phase 1 CI).
   SEND_EMAIL?: {
     send(msg: {
-      to:      { email: string }[];
-      from:    { email: string; name?: string };
+      to:      string;
+      from:    string;
       subject: string;
-      text:    string;
       html?:   string;
+      text?:   string;
     }): Promise<void>;
   };
   AUTH_EMAIL_FROM?:      string;   // e.g. "noreply@ubuntusoftware.net"

@@ -20,12 +20,16 @@ import {
   username,
   openAPI,
 } from 'better-auth/plugins';
-// Cloudflare Email Service — built-in, no npm install. The binding's
-// .send() method requires an EmailMessage instance wrapping a real MIME
-// message (NOT a JSON envelope — the {to:[{email}], from, subject}
-// shape that ADR-006 documented was never the actual API).
-import { EmailMessage } from 'cloudflare:email';
-import { createMimeMessage } from 'mimetext';
+// Cloudflare Email Service (new, beta) — uses a plain JSON shape via
+// `env.SEND_EMAIL.send({ to, from, subject, html, text })`. NOT the
+// older Email Routing `cloudflare:email` MIME-based API.
+//
+// This works for arbitrary external recipients (magic links, OTPs,
+// verification — explicitly supported per Cloudflare docs) once the
+// sending domain is onboarded under Email Service > Email Sending in
+// the CF dashboard, with auto-provisioned SPF + DKIM + DMARC.
+//
+// Docs: https://developers.cloudflare.com/email-service/examples/email-sending/magic-link/
 import type { Bindings } from './auth';
 
 export const SOCIAL_PROVIDERS = {
@@ -35,10 +39,12 @@ export const SOCIAL_PROVIDERS = {
 } as const;
 
 // Shared email helper — used by plugins and emailVerification in auth.ts.
-// Uses CF Email Service binding when available; logs to console otherwise.
+// Uses the NEW Cloudflare Email Service when SEND_EMAIL binding + onboarded
+// domain are present; logs to console otherwise (Phase 1 CI / vitest).
 //
-// CF send_email expects an EmailMessage(from, to, rawMime). Build the MIME
-// via mimetext so we get proper headers + multipart text+html.
+// Sends to ARBITRARY external recipients — no destination verification
+// needed once the sender domain is onboarded under Email Service > Email
+// Sending in the CF dashboard.
 export async function sendEmail(
   env: Bindings,
   to: string,
@@ -50,19 +56,13 @@ export async function sendEmail(
     console.log(`[email] ${subject} → ${to}\n${text}`);
     return;
   }
-
-  const msg = createMimeMessage();
-  msg.setSender({
-    addr: env.AUTH_EMAIL_FROM,
-    name: env.AUTH_EMAIL_FROM_NAME ?? 'Auth',
+  await env.SEND_EMAIL.send({
+    to,
+    from: env.AUTH_EMAIL_FROM,
+    subject,
+    html,
+    text,
   });
-  msg.setRecipient(to);
-  msg.setSubject(subject);
-  msg.addMessage({ contentType: 'text/plain', data: text });
-  msg.addMessage({ contentType: 'text/html', data: html });
-
-  const email = new EmailMessage(env.AUTH_EMAIL_FROM, to, msg.asRaw());
-  await env.SEND_EMAIL.send(email);
 }
 
 export function getPlugins(env: Bindings) {
