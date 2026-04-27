@@ -767,11 +767,63 @@ printf 'Workers Scripts edit (deploy:web)...... '
 curl -fsS -H "$AUTH" "$CF/accounts/$(wrangler whoami 2>&1 | grep -oE '[0-9a-f]{32}' | head -1)/workers/scripts" >/dev/null 2>&1 && echo "✓" || echo "✗"
 printf 'Email Sending edit (email:onboard)..... '
 RESP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -H "$AUTH" "$CF/zones/$ZONE_ID/email/sending/subdomains")
-[ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — add 'Zone : Email Sending : Edit')"
+[ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — run: mise run cf:token:edit)"
 printf 'Turnstile Sites edit (cf:turnstile:*).. '
 ACCT_ID=$(wrangler whoami 2>&1 | grep -oE '[0-9a-f]{32}' | head -1)
 RESP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -H "$AUTH" "$CF/accounts/$ACCT_ID/challenges/widgets")
-[ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — add 'Account : Turnstile Sites : Edit')"
+[ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — run: mise run cf:token:edit)"
+"""
+
+[tasks."cf:token:edit"]
+description = "Open the CF dashboard for your existing token + print every scope this repo wants. Use when cf:token:check shows ✗ on a scope — you only need to ADD it, no need to regenerate the whole token."
+shell = "bash -c"
+run = """
+set -eu
+: "${CLOUDFLARE_API_TOKEN:=$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
+  TOKEN_ID=$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+    https://api.cloudflare.com/client/v4/user/tokens/verify \
+    | mise exec -- jq -r '.result.id // empty')
+fi
+
+# CF doesn't expose a per-token deep-link; the API Tokens index is the
+# best we can open. The token name (e.g. 'dev') is what you click.
+URL="https://dash.cloudflare.com/profile/api-tokens"
+
+cat <<'HEREDOC'
+
+────────────────────────────────────────────────────────────────────
+  Edit your CF API token to add any missing scopes.
+
+  Account permissions:
+    • Workers Scripts            : Edit
+    • Workers KV Storage         : Edit
+    • Workers R2 Storage         : Edit
+    • D1                         : Edit
+    • Email Routing Addresses    : Edit
+    • Email Sending              : Edit
+    • Turnstile Sites            : Edit       ← needed by cf:turnstile:* tasks
+    • Account Settings           : Read
+
+  Zone permissions (for ubuntusoftware.net):
+    • Zone                       : Read
+    • Workers Routes             : Edit
+    • DNS                        : Edit
+
+  Account Resources : Include : your account
+  Zone Resources    : Include : Specific zone : ubuntusoftware.net
+────────────────────────────────────────────────────────────────────
+
+HEREDOC
+
+if [ -n "${TOKEN_ID:-}" ]; then
+  echo "Your current token id: $TOKEN_ID"
+fi
+echo "Opening: $URL"
+( command -v open >/dev/null && open "$URL" ) || true
+echo
+echo "After saving the edited token, the same token VALUE works (no new value)."
+echo "Verify with: mise run cf:token:check"
 """
 
 [tasks."cf:token:create"]
