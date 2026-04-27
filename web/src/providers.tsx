@@ -14,6 +14,15 @@ function RouterLink({ href, className, children }: { href: string; className?: s
   return <NavLink to={href} className={className}>{children}</NavLink>;
 }
 
+// Cloudflare Turnstile site key — public (safe to bake into the bundle).
+// Set at build time via `VITE_TURNSTILE_SITE_KEY` (mise install pulls it
+// from fnox; production builds bake it in via deploy:web).
+// When unset, daveyplate skips the widget render → server captcha plugin
+// is also off (gated on TURNSTILE_SECRET_KEY) → sign-in works without
+// captcha. Both halves activate together once `mise run cf:turnstile:create`
+// has been run AND the worker is redeployed.
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
+
 export function Providers({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   return (
@@ -33,6 +42,12 @@ export function Providers({ children }: { children: ReactNode }) {
       deleteUser
       teams
       organization
+      {...(TURNSTILE_SITE_KEY && {
+        captcha: {
+          provider: 'cloudflare-turnstile' as const,
+          siteKey: TURNSTILE_SITE_KEY,
+        },
+      })}
     >
       {children}
     </AuthUIProvider>

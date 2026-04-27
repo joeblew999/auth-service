@@ -114,6 +114,18 @@ description = "Phase 3 — Build web SPA then deploy worker + assets to Cloudfla
 run = """
 set -euo pipefail
 ROOT="$(pwd)"
+
+# Pull TURNSTILE_SITE_KEY from fnox at build time so the React UI knows
+# to render the captcha widget. Public value, safe to bake into bundle.
+# Skipped silently when absent (captcha not yet onboarded — sign-in still
+# works because the worker also gates on TURNSTILE_SECRET_KEY being set).
+if VITE_TURNSTILE_SITE_KEY=$(fnox get TURNSTILE_SITE_KEY 2>/dev/null); then
+  export VITE_TURNSTILE_SITE_KEY
+  echo "→ Building with VITE_TURNSTILE_SITE_KEY (captcha UI active)"
+else
+  echo "→ Building without VITE_TURNSTILE_SITE_KEY (captcha UI off — run cf:turnstile:create to enable)"
+fi
+
 (cd "${ROOT}/web" && bun run build)
 cd "${ROOT}/worker" && wrangler deploy --env production
 """
@@ -336,6 +348,64 @@ VERIFY=$(curl -sS -H "Authorization: Bearer $NEW_TOKEN" "https://api.cloudflare.
 echo "✓ Token verified. Saving to fnox..."
 printf '%s' "$NEW_TOKEN" | fnox set CLOUDFLARE_API_TOKEN --global --provider keychain --stdin
 echo "✓ Saved. Run 'mise run cf:token:check' to confirm scopes."
+"""
+
+[tasks."cf:turnstile:create"]
+description = "Guide creating a Cloudflare Turnstile widget, save sitekey + secret to fnox, push secret to wrangler"
+run = """
+set -euo pipefail
+cat <<'EOF'
+
+────────────────────────────────────────────────────────────────────
+  Cloudflare Turnstile widget — for joeblew999/auth-service
+────────────────────────────────────────────────────────────────────
+
+Turnstile is CF's free, unlimited bot-protection widget. We use it to
+gate sign-in / sign-up / forget-password endpoints.
+
+Steps in the dashboard (~2 min):
+
+  1. Visit: https://dash.cloudflare.com/?to=/:account/turnstile
+  2. Click 'Add widget' (or 'Add Site')
+  3. Settings:
+       Widget name : auth.ubuntusoftware.net
+       Hostnames   : ubuntusoftware.net  (includes all subdomains)
+                     localhost
+                     127.0.0.1
+       Widget mode : Managed (recommended — CF picks the challenge)
+  4. Click Create.
+  5. Copy the SITE KEY (starts with 0x...) and SECRET KEY
+     (starts with 0x... too — DIFFERENT value).
+
+────────────────────────────────────────────────────────────────────
+EOF
+
+URL="https://dash.cloudflare.com/?to=/:account/turnstile"
+( command -v open >/dev/null && open "$URL" ) || true
+
+read -r -p "Paste SITE key (0x...): " SITEKEY
+[ -n "$SITEKEY" ] || { echo "✗ empty sitekey, aborting"; exit 1; }
+read -r -p "Paste SECRET key (0x...) (input hidden): " -s SECRETKEY
+echo
+[ -n "$SECRETKEY" ] || { echo "✗ empty secret, aborting"; exit 1; }
+
+echo "→ Saving SITE key to fnox (TURNSTILE_SITE_KEY, public — safe to bake into web build)..."
+printf '%s' "$SITEKEY" | fnox set TURNSTILE_SITE_KEY --global --provider keychain --stdin
+
+echo "→ Saving SECRET key to fnox (TURNSTILE_SECRET_KEY, server-only)..."
+printf '%s' "$SECRETKEY" | fnox set TURNSTILE_SECRET_KEY --global --provider keychain --stdin
+
+echo "→ Pushing SECRET key to deployed Worker..."
+cd worker
+printf '%s' "$SECRETKEY" | wrangler secret put TURNSTILE_SECRET_KEY --env production
+cd ..
+
+echo
+echo "✓ Done. Site key (public, used by web build): $SITEKEY"
+echo
+echo "Next: enable the captcha plugin in worker/src/plugins.ts (server),"
+echo "wire it into <AuthUIProvider captcha={...}> in web/ (client),"
+echo "rebuild + redeploy."
 """
 
 [tasks."email:onboard"]

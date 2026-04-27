@@ -20,6 +20,7 @@ import {
   username,
   openAPI,
   haveIBeenPwned,
+  captcha,
 } from 'better-auth/plugins';
 // Cloudflare Email Service (new, beta) — uses a plain JSON shape via
 // `env.SEND_EMAIL.send({ to, from, subject, html, text })`. NOT the
@@ -132,12 +133,16 @@ export function getPlugins(env: Bindings) {
     // upstream — full hash never leaves this Worker). Zero config, free.
     haveIBeenPwned(),
 
-    // TODO: Cloudflare Turnstile (captcha plugin). Server-only enable would
-    // BREAK sign-in / sign-up because daveyplate's UI must also render the
-    // Turnstile widget and pass the token. Paired change — wire when adding:
-    //   1. Server:  add `captcha({ provider: 'cloudflare-turnstile', secretKey })`
-    //              + push TURNSTILE_SECRET_KEY via wrangler secret
-    //   2. Client:  pass `captcha={{ provider: 'cloudflare-turnstile', siteKey }}`
-    //              into <AuthUIProvider> in web/ + bake VITE_TURNSTILE_SITE_KEY
+    // Cloudflare Turnstile bot protection. Conditional on TURNSTILE_SECRET_KEY
+    // being set on the deployed Worker (push via `mise run cf:turnstile:create`).
+    // Until set, sign-in / sign-up / forget-password accept requests without
+    // a captcha token (ok in dev / pre-launch). Once set, the daveyplate
+    // React UI MUST also be configured with the matching site key (passed
+    // via <AuthUIProvider captcha={{ provider, siteKey }}>) — otherwise
+    // the UI won't include a token and every sign-in attempt fails.
+    ...(env.TURNSTILE_SECRET_KEY ? [captcha({
+      provider: 'cloudflare-turnstile',
+      secretKey: env.TURNSTILE_SECRET_KEY,
+    })] : []),
   ];
 }

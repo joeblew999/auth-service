@@ -36,6 +36,10 @@ export type Bindings = {
   // session cookie spans every *.ubuntusoftware.net consumer Worker. Absent
   // in dev (localhost cookies don't need a domain attribute).
   COOKIE_DOMAIN?: string;
+  // Cloudflare Turnstile server-side secret key. When set, the captcha
+  // plugin is enabled and gates sign-in / sign-up / forget-password.
+  // Push via: `mise run cf:turnstile:create` (one-time guided setup).
+  TURNSTILE_SECRET_KEY?: string;
 };
 
 export function createAuth(env: Bindings) {
