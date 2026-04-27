@@ -1,12 +1,12 @@
 # ─────────────────────────────────────────────────────────
-# auth-better-worker — generated from worker/wrangler.toml.template
+# ${WORKER_NAME} — generated from worker/wrangler.toml.template
 # ─────────────────────────────────────────────────────────
 #
 # DO NOT EDIT THIS GENERATED FILE.
 # Edit config/<env>.env then re-run `mise run wrangler:generate`.
 # ─────────────────────────────────────────────────────────
 
-name = "auth-better-worker"
+name = "${WORKER_NAME}"
 main = "src/index.ts"
 compatibility_date = "2025-10-08"
 compatibility_flags = ["nodejs_compat"]
@@ -22,7 +22,7 @@ not_found_handling = "single-page-application"
 
 [[d1_databases]]
 binding       = "AUTH_DB"
-database_name = "auth-better-db"
+database_name = "${D1_DATABASE_NAME}"
 database_id   = "local"
 
 [[kv_namespaces]]
@@ -32,10 +32,10 @@ id      = "local"
 [vars]
 BETTER_AUTH_URL        = "http://localhost:8792"
 AUTH_BETTER_WEB_PORT   = "5174"
-AUTH_EMAIL_FROM        = "noreply@ubuntusoftware.net"
-AUTH_EMAIL_FROM_NAME   = "Auth"
+AUTH_EMAIL_FROM        = "${EMAIL_FROM_LOCAL}@${DOMAIN}"
+AUTH_EMAIL_FROM_NAME   = "${EMAIL_FROM_NAME}"
 AUTH_TEST_SINK_ENABLED = "true"
-TEST_SINK_DOMAIN       = "test.ubuntusoftware.net"
+TEST_SINK_DOMAIN       = "${SUBDOMAIN_TEST}.${DOMAIN}"
 
 # CF Email Service binding (ADR-006).
 [[send_email]]
@@ -44,18 +44,18 @@ name = "SEND_EMAIL"
 # ── Production ────────────────────────────────────────────────────────────────
 
 [env.production]
-name = "auth-better-worker"
+name = "${WORKER_NAME}"
 routes = [
-  { pattern = "auth.ubuntusoftware.net", custom_domain = true },
+  { pattern = "${SUBDOMAIN_AUTH}.${DOMAIN}", custom_domain = true },
 ]
 
 [env.production.vars]
-BETTER_AUTH_URL        = "https://auth.ubuntusoftware.net"
-AUTH_EMAIL_FROM        = "noreply@mail.ubuntusoftware.net"
-AUTH_EMAIL_FROM_NAME   = "Auth"
+BETTER_AUTH_URL        = "https://${SUBDOMAIN_AUTH}.${DOMAIN}"
+AUTH_EMAIL_FROM        = "${EMAIL_FROM_LOCAL}@${SUBDOMAIN_MAIL}.${DOMAIN}"
+AUTH_EMAIL_FROM_NAME   = "${EMAIL_FROM_NAME}"
 AUTH_TEST_SINK_ENABLED = "true"
-COOKIE_DOMAIN          = ".ubuntusoftware.net"
-TEST_SINK_DOMAIN       = "test.ubuntusoftware.net"
+COOKIE_DOMAIN          = ".${DOMAIN}"
+TEST_SINK_DOMAIN       = "${SUBDOMAIN_TEST}.${DOMAIN}"
 
 # Assets binding must be re-declared per-environment — wrangler doesn't
 # inherit the top-level [assets] block.
@@ -69,12 +69,12 @@ name = "SEND_EMAIL"
 
 [[env.production.d1_databases]]
 binding       = "AUTH_DB"
-database_name = "auth-better-db"
-database_id   = "69f62edf-88ec-41ef-be41-4dd341b2da0d"
+database_name = "${D1_DATABASE_NAME}"
+database_id   = "${D1_DATABASE_ID}"
 
 [[env.production.kv_namespaces]]
-binding = "AUTH_KV"
-id      = "476719674e124d6b9f5e70965cb017d0"
+binding = "${KV_NAMESPACE_NAME}"
+id      = "${KV_NAMESPACE_ID}"
 
 [dev]
 ip             = "::"

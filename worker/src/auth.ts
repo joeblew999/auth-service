@@ -40,6 +40,10 @@ export type Bindings = {
   // plugin is enabled and gates sign-in / sign-up / forget-password.
   // Push via: `mise run cf:turnstile:create` (one-time guided setup).
   TURNSTILE_SECRET_KEY?: string;
+  // Test-email sink subdomain (e.g. "test.ubuntusoftware.net"). Inbound
+  // mail to *@${TEST_SINK_DOMAIN} is captured to KV for e2e polling
+  // (ADR-007). Set in worker/wrangler.toml [vars] from config/<env>.env.
+  TEST_SINK_DOMAIN?: string;
 };
 
 export function createAuth(env: Bindings) {

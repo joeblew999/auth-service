@@ -21,9 +21,11 @@ import { createAuth } from './auth';
 import type { Bindings } from './auth';
 
 // ── CF Email Routing handler (ADR-007) ────────────────────────────────────────
-// Receives inbound emails routed to *@test.ubuntusoftware.net and stores them
-// in AUTH_KV keyed by recipient address (TTL 5 min). Test suite polls
-// GET /auth/test/inbox to retrieve the stored url/otp without a real inbox.
+// Receives inbound emails routed to *@${TEST_SINK_DOMAIN} (default
+// test.${DOMAIN}, set in worker/wrangler.toml [vars] from
+// config/<env>.env) and stores them in AUTH_KV keyed by recipient
+// address (TTL 5 min). Test suite polls GET /auth/test/inbox to
+// retrieve the stored url/otp without a real inbox.
 
 interface InboundEmail {
   from: string;
@@ -34,7 +36,8 @@ interface InboundEmail {
 }
 
 async function emailHandler(message: InboundEmail, env: Bindings): Promise<void> {
-  if (!message.to.endsWith('@test.ubuntusoftware.net')) {
+  const sinkSuffix = '@' + (env.TEST_SINK_DOMAIN ?? 'test.localhost');
+  if (!message.to.endsWith(sinkSuffix)) {
     message.setReject('Not a test sink address');
     return;
   }
