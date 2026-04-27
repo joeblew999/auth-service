@@ -16,6 +16,14 @@ export const WORKER_URL =
 
 export const email = (label: string) => `${label}-${Date.now()}@test.dev`;
 
+// All tests use this single test password. It MUST satisfy:
+//   - not in HaveIBeenPwned breach corpus (the haveIBeenPwned plugin
+//     blocks compromised passwords on signup / change / reset)
+//   - >= 8 chars (Better Auth's default minimum)
+//   - mixed case + digit + symbol (matches typical strength UI hints)
+// 'Password123!' was the old fixture — that one IS breached and now fails.
+export const TEST_PASSWORD = 'Tx9k!Pn2vMrQ8wL3ZcEhYsBfDjGuV6N4';
+
 // ── Email test sink helpers (ADR-007) ─────────────────────────────────────────
 // Requires AUTH_TEST_SINK_ENABLED=true in the Worker (dev only) and the CF
 // Email Routing catch-all for *@test.ubuntusoftware.net → auth-better-worker.
@@ -62,7 +70,7 @@ export async function createUser(page: any, e: string) {
   const err = await page.evaluate(async (creds: any) => {
     const res = await (window as any).authClient.signUp.email(creds);
     return res.error ?? null;
-  }, { email: e, password: 'Password123!', name: 'Test User' });
+  }, { email: e, password: TEST_PASSWORD, name: 'Test User' });
   if (err) throw new Error(`createUser failed: ${JSON.stringify(err)}`);
   await page.evaluate(async () => (window as any).authClient.signOut());
 }
@@ -70,7 +78,7 @@ export async function createUser(page: any, e: string) {
 export async function signInViaUI(page: any, e: string) {
   await page.goto('/auth/sign-in');
   await page.locator('input[name="email"], input[placeholder*="email" i], input[placeholder*="username" i]').first().fill(e);
-  await page.getByRole('textbox', { name: /password/i }).fill('Password123!');
+  await page.getByRole('textbox', { name: /password/i }).fill(TEST_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await expect(page).not.toHaveURL(/sign-in/);
 }

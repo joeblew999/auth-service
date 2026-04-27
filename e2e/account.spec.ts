@@ -1,7 +1,7 @@
 // auth-better/e2e/account.spec.ts — account screens
 
 import { test, expect } from '@playwright/test';
-import { createUser, signInViaUI, email } from './helpers';
+import { createUser, signInViaUI, email, TEST_PASSWORD } from './helpers';
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -70,14 +70,14 @@ test('multi-session: two different users in same browser = two device sessions',
   const err1 = await page.evaluate(async (creds: any) => {
     const res = await (window as any).authClient.signUp.email(creds);
     return res.error ?? null;
-  }, { email: e1, password: 'Password123!', name: 'MS User One' });
+  }, { email: e1, password: TEST_PASSWORD, name: 'MS User One' });
   expect(err1).toBeNull();
 
   // Sign up as user2 in same browser context — session 2 added to multi-session cookie
   const err2 = await page.evaluate(async (creds: any) => {
     const res = await (window as any).authClient.signUp.email(creds);
     return res.error ?? null;
-  }, { email: e2, password: 'Password123!', name: 'MS User Two' });
+  }, { email: e2, password: TEST_PASSWORD, name: 'MS User Two' });
   expect(err2).toBeNull();
 
   // listDeviceSessions returns both sessions

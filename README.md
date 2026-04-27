@@ -134,10 +134,15 @@ isn't the same as real-inbox delivery.
 ## Test users
 
 The e2e tests generate random emails like `signup-1234567890@test.ubuntusoftware.net`
-and always use `Password123!` as the password.
+and use the canonical `TEST_PASSWORD` exported from `e2e/helpers.ts`.
 
-Manual:
-- `1234567890@test.ubuntusoftware.net` / `Password123!`
+The old fixture `Password123!` is now **rejected** at signup because the
+`haveIBeenPwned` plugin (enabled in `worker/src/plugins.ts`) blocks any
+password that appears in the HIBP breach corpus. Use a non-breached
+fixture for any new manual or scripted test.
+
+Manual sign-in:
+- `1234567890@test.ubuntusoftware.net` / *use the value of `TEST_PASSWORD`*
 
 ## Run it (local dev)
 

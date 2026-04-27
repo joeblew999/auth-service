@@ -1,7 +1,7 @@
 // auth-better/e2e/auth.spec.ts — auth flows
 
 import { test, expect } from '@playwright/test';
-import { createUser, signInViaUI, email } from './helpers';
+import { createUser, signInViaUI, email, TEST_PASSWORD } from './helpers';
 
 // ── Sign-up ───────────────────────────────────────────────────────────────────
 
@@ -10,7 +10,7 @@ test('sign-up with email + password', async ({ page }) => {
   await page.goto('/auth/sign-up');
   await page.locator('input[name="name"]').fill('Test User');
   await page.locator('input[name="email"]').fill(e);
-  await page.getByRole('textbox', { name: /password/i }).first().fill('Password123!');
+  await page.getByRole('textbox', { name: /password/i }).first().fill(TEST_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await expect(page).not.toHaveURL(/sign-up/);
 });
@@ -67,7 +67,7 @@ test('sign-up with username field, then sign-in via username', async ({ page }) 
   const signUpErr = await page.evaluate(async (creds: any) => {
     const res = await (window as any).authClient.signUp.email(creds);
     return res.error ?? null;
-  }, { email: e, password: 'Password123!', name: 'Username User', username: uname });
+  }, { email: e, password: TEST_PASSWORD, name: 'Username User', username: uname });
   expect(signUpErr).toBeNull();
 
   // Sign out before testing sign-in
@@ -77,7 +77,7 @@ test('sign-up with username field, then sign-in via username', async ({ page }) 
   const result = await page.evaluate(async (creds: any) => {
     const res = await (window as any).authClient.signIn.username(creds);
     return { error: res.error ?? null, hasToken: !!res.data?.token };
-  }, { username: uname, password: 'Password123!' });
+  }, { username: uname, password: TEST_PASSWORD });
 
   expect(result.error).toBeNull();
   expect(result.hasToken).toBe(true);
@@ -114,7 +114,7 @@ test('anonymous account upgrades to real account via signUp.email', async ({ pag
     if (res.error) return { error: res.error, isAnonymous: null };
     const session = await (window as any).authClient.getSession();
     return { error: null, isAnonymous: session.data?.user.isAnonymous ?? null };
-  }, { email: e, password: 'Password123!', name: 'Upgraded User' });
+  }, { email: e, password: TEST_PASSWORD, name: 'Upgraded User' });
 
   expect(result.error).toBeNull();
   // After upgrade, user is no longer anonymous (null or false)
