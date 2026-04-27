@@ -728,9 +728,12 @@ fi
 [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "✗ CLOUDFLARE_API_TOKEN missing"; exit 1; }
 [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "✗ CLOUDFLARE_ACCOUNT_ID missing"; exit 1; }
 
-# Strip any trailing newline / whitespace just in case (sync-bug suspect).
-CLOUDFLARE_API_TOKEN=$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '\\n\\r ')
-CLOUDFLARE_ACCOUNT_ID=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '\\n\\r ')
+# Strip trailing newline/CR only (preserves all other chars). Use POSIX
+# parameter expansion which doesn't interpret \n.
+CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN%$'\\n'}"
+CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN%$'\\r'}"
+CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID%$'\\n'}"
+CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID%$'\\r'}"
 
 CF="https://api.cloudflare.com/client/v4"
 H="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
