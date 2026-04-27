@@ -20,6 +20,12 @@ import {
   username,
   openAPI,
 } from 'better-auth/plugins';
+// Cloudflare Email Service — built-in, no npm install. The binding's
+// .send() method requires an EmailMessage instance wrapping a real MIME
+// message (NOT a JSON envelope — the {to:[{email}], from, subject}
+// shape that ADR-006 documented was never the actual API).
+import { EmailMessage } from 'cloudflare:email';
+import { createMimeMessage } from 'mimetext';
 import type { Bindings } from './auth';
 
 export const SOCIAL_PROVIDERS = {
@@ -30,6 +36,9 @@ export const SOCIAL_PROVIDERS = {
 
 // Shared email helper — used by plugins and emailVerification in auth.ts.
 // Uses CF Email Service binding when available; logs to console otherwise.
+//
+// CF send_email expects an EmailMessage(from, to, rawMime). Build the MIME
+// via mimetext so we get proper headers + multipart text+html.
 export async function sendEmail(
   env: Bindings,
   to: string,
@@ -41,13 +50,19 @@ export async function sendEmail(
     console.log(`[email] ${subject} → ${to}\n${text}`);
     return;
   }
-  await env.SEND_EMAIL.send({
-    to:      [{ email: to }],
-    from:    { email: env.AUTH_EMAIL_FROM, name: env.AUTH_EMAIL_FROM_NAME },
-    subject,
-    text,
-    html,
+
+  const msg = createMimeMessage();
+  msg.setSender({
+    addr: env.AUTH_EMAIL_FROM,
+    name: env.AUTH_EMAIL_FROM_NAME ?? 'Auth',
   });
+  msg.setRecipient(to);
+  msg.setSubject(subject);
+  msg.addMessage({ contentType: 'text/plain', data: text });
+  msg.addMessage({ contentType: 'text/html', data: html });
+
+  const email = new EmailMessage(env.AUTH_EMAIL_FROM, to, msg.asRaw());
+  await env.SEND_EMAIL.send(email);
 }
 
 export function getPlugins(env: Bindings) {
