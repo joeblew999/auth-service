@@ -156,6 +156,19 @@ mise's default `pitchfork` alias still points at the old jdx repo.
 Use `"github:endevco/pitchfork" = "2.7"` explicitly to track the
 active fork.
 
+### `fnox get` inside a mise task needs `mise exec --` prefix
+mise's `bash -c` subshell doesn't always inherit the augmented PATH
+that has fnox on it. Bare `fnox get X` returns exit 127 (command not
+found). Worse: in `if VAR=$(fnox get X 2>/dev/null); then ... fi`,
+the failure is silent — VAR stays unset, the `else` branch runs,
+build continues without the value. Symptom: `VITE_TURNSTILE_SITE_KEY`
+never baked into vite build → Turnstile widget invisible → blank
+sign-in page in production. **Fix: always wrap with `mise exec --`**
+inside any task body:
+```bash
+if VAR=$(mise exec -- fnox get KEY 2>/dev/null); then export VAR; fi
+```
+
 ## Multi-env model (read this BEFORE editing wrangler.toml)
 
 **Every value that varies per deployment lives in `config/<env>.env`.**
