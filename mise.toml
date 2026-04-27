@@ -287,24 +287,50 @@ echo "$SECRET_VALUE" | wrangler secret put BETTER_AUTH_SECRET --env "$ENV"
 """
 
 [tasks."secrets:rotate-better-auth"]
-description = "Rotate BETTER_AUTH_SECRET (invalidates ALL active sessions). Default env: production. Override: ENV=staging mise run ..."
+description = "Rotate BETTER_AUTH_SECRET (invalidates ALL sessions AND JWKS). Default env: production. Override: ENV=staging mise run ..."
 shell = "bash -c"
 run = """
 set -eu
 ENV="${ENV:-production}"
-echo "⚠️  This will invalidate every active session in env=$ENV."
+echo "⚠️  This will invalidate every active session in env=$ENV"
+echo "    AND clear the jwks table (Better Auth regenerates on next use)."
 echo "    Every signed-in user will be forced to re-auth on next request."
 echo
 read -r -p "Type 'rotate' to continue: " CONFIRM
 [ "$CONFIRM" = "rotate" ] || { echo "Aborted."; exit 0; }
 NEW=$(openssl rand -base64 32)
-printf '%s' "$NEW" | fnox set BETTER_AUTH_SECRET --global --provider age
+printf '%s' "$NEW" | mise exec -- fnox set BETTER_AUTH_SECRET --global --provider age
 echo "✓ Saved to fnox."
 ENV="$ENV" mise run wrangler:generate
 cd worker
 printf '%s' "$NEW" | wrangler secret put BETTER_AUTH_SECRET --env "$ENV"
-echo "✓ Pushed to deployed Worker (env=$ENV). New sessions use the new secret."
+echo "✓ Pushed to deployed Worker (env=$ENV)."
+cd ..
+ENV="$ENV" mise run secrets:clear-jwks <<< 'clear'
 """
+
+[tasks."secrets:clear-jwks"]
+description = "Clear D1 jwks table — required after BETTER_AUTH_SECRET rotation (encrypted private keys become undecryptable). Default env: production."
+shell = "bash -c"
+run = """
+set -eu
+ENV="${ENV:-production}"
+echo "⚠️  This deletes all rows from the jwks table in env=$ENV."
+echo "    Better Auth will regenerate keys with the CURRENT BETTER_AUTH_SECRET on next get-session."
+echo "    Symptom this fixes: get-session returns 500 with 'Failed to decrypt private key'."
+echo
+read -r -p "Type 'clear' to continue: " CONFIRM
+[ "$CONFIRM" = "clear" ] || { echo "Aborted."; exit 0; }
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+ENV="$ENV" mise run wrangler:generate >/dev/null
+cd worker && wrangler d1 execute auth-better-db --env "$ENV" --remote --command 'DELETE FROM jwks;'
+echo "✓ jwks cleared. Next get-session will regenerate."
+"""
+
+[tasks."prove:sso-rbac"]
+description = "End-to-end smoke: sign up → create org → cross-subdomain /api/me → /api/me/org returns role. Proves the full SSO+RBAC chain over Service Bindings."
+shell = "bash -c"
+run = "bash scripts/prove-sso-rbac.sh"
 
 [tasks."secrets:cf:list"]
 description = "List secrets currently set on the deployed Worker (values not shown — wrangler hides them)"

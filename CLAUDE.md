@@ -156,6 +156,37 @@ mise's default `pitchfork` alias still points at the old jdx repo.
 Use `"github:endevco/pitchfork" = "2.7"` explicitly to track the
 active fork.
 
+### Rotating `BETTER_AUTH_SECRET` ALSO requires clearing the `jwks` table
+Symptom: every call to `/auth/api/get-session` returns HTTP 500 with body
+empty (status only visible via `-w '%{http_code}'`). Logs show:
+`BetterAuthError: Failed to decrypt private key. Make sure the secret
+currently in use is the same as the one used to encrypt the private key.`
+
+The JWT plugin stores its private key encrypted with `BETTER_AUTH_SECRET`
+in D1 `jwks` table. Rotate the secret → existing rows become
+undecryptable → every get-session fails → SSO is silently broken
+(consumer Workers see "not signed in" even with a valid cookie).
+
+`secrets:rotate-better-auth` now clears jwks automatically. If you
+rotated manually before that fix, run `mise run secrets:clear-jwks`
+once. Better Auth regenerates fresh keys on the next get-session.
+
+### Workers Logs (observability) must be explicitly enabled
+Without `[observability] enabled = true` in wrangler.toml, the
+cloudflare-observability MCP and dashboard return ZERO logs even though
+the worker is running. `wrangler tail` still works (live stream) but
+nothing is queryable after the fact. Both top-level and
+`[env.production.observability]` blocks needed — same inheritance gotcha
+as `[assets]`.
+
+### Proving the full SSO+RBAC chain
+`mise run prove:sso-rbac` runs `scripts/prove-sso-rbac.sh`: signs up a
+fresh user, creates an org, hits `ifc-lite.ubuntusoftware.net/api/me`
++ `/api/me/org` with the cookie, asserts `role=owner` returns. This
+exercises cross-subdomain cookies + Service Binding + organization
+plugin + the consumer-side `getOrgMember` helper in one pass — use it
+as the smoke test for any change touching auth or consumer wiring.
+
 ### `fnox get` inside a mise task needs `mise exec --` prefix
 mise's `bash -c` subshell doesn't always inherit the augmented PATH
 that has fnox on it. Bare `fnox get X` returns exit 127 (command not

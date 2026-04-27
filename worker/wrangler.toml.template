@@ -12,6 +12,13 @@ compatibility_date = "2025-10-08"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+# Workers Logs — captures console.* + uncaught errors for the
+# cloudflare-observability MCP and dashboard. Without this block
+# `wrangler tail` works but logs are NOT persisted/queryable.
+[observability]
+enabled = true
+head_sampling_rate = 1.0
+
 # Static assets — built React SPA served by the worker in production.
 [assets]
 directory = "../web/dist"
@@ -63,6 +70,10 @@ TEST_SINK_DOMAIN       = "${SUBDOMAIN_TEST}.${DOMAIN}"
 directory          = "../web/dist"
 binding            = "ASSETS"
 not_found_handling = "single-page-application"
+
+[env.production.observability]
+enabled = true
+head_sampling_rate = 1.0
 
 [[env.production.send_email]]
 name = "SEND_EMAIL"
