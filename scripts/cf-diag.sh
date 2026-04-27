@@ -31,12 +31,15 @@ fi
 [ -n "$CLOUDFLARE_API_TOKEN" ]  || { echo "✗ CLOUDFLARE_API_TOKEN missing";  exit 1; }
 [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "✗ CLOUDFLARE_ACCOUNT_ID missing"; exit 1; }
 
-# Strip any trailing CR/LF from the secrets (sync-bug suspect).
-CLOUDFLARE_API_TOKEN=$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '\r\n')
-CLOUDFLARE_ACCOUNT_ID=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '\r\n')
-
 TLEN=$(printf '%s' "$CLOUDFLARE_API_TOKEN"  | wc -c | tr -d ' ')
 ALEN=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | wc -c | tr -d ' ')
+
+# Detect if GH Actions masking has reduced the value to '***' (3 chars)
+# vs the underlying unmasked length. Print first 4 hex chars of a SHA256
+# of the value so we can verify it without revealing it.
+TFP=$(printf '%s' "$CLOUDFLARE_API_TOKEN"  | shasum -a 256 | cut -c1-8)
+AFP=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | shasum -a 256 | cut -c1-8)
+echo "(api_token sha256[0:8]=$TFP, account_id sha256[0:8]=$AFP)"
 
 CF="https://api.cloudflare.com/client/v4"
 H="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
