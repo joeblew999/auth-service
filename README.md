@@ -5,21 +5,20 @@ v1.5 against D1 + KV + Cloudflare Email, and acts as the **shared identity
 provider for every other Worker on `*.ubuntusoftware.net`** via Cloudflare
 Service Bindings.
 
-- Backend: <https://github.com/better-auth/better-auth>
-- React SPA UI: <https://github.com/better-auth-ui/better-auth-ui> · <https://better-auth-ui.com/integrations/react>
-- Was extracted from `joeblew999/plat-trunk/systems/auth/auth-better` — see
-  ADRs in [`docs/adr/`](docs/adr/) for design decisions.
+- Backend: [better-auth/better-auth](https://github.com/better-auth/better-auth)
+- React SPA UI: [better-auth-ui/better-auth-ui](https://github.com/better-auth-ui/better-auth-ui) ([docs](https://better-auth-ui.com/integrations/react))
+- Was extracted from `joeblew999/plat-trunk/systems/auth/auth-better` — see ADRs in [`docs/adr/`](docs/adr) for design decisions.
 
 ## Live URLs
 
-| | URL |
-|--|-----|
-| Sign in | <https://auth.ubuntusoftware.net/auth/sign-in> |
-| Sign up | <https://auth.ubuntusoftware.net/auth/sign-up> |
-| Account | <https://auth.ubuntusoftware.net/account/settings> |
-| Health  | <https://auth.ubuntusoftware.net/health> |
-| API ref | <https://auth.ubuntusoftware.net/auth/api/reference> |
-| Backup (workers.dev) | <https://auth-better-worker.gedw99.workers.dev> |
+| Endpoint | URL |
+| --- | --- |
+| Sign in | [auth.ubuntusoftware.net/auth/sign-in](https://auth.ubuntusoftware.net/auth/sign-in) |
+| Sign up | [auth.ubuntusoftware.net/auth/sign-up](https://auth.ubuntusoftware.net/auth/sign-up) |
+| Account | [auth.ubuntusoftware.net/account/settings](https://auth.ubuntusoftware.net/account/settings) |
+| Health  | [auth.ubuntusoftware.net/health](https://auth.ubuntusoftware.net/health) |
+| API ref | [auth.ubuntusoftware.net/auth/api/reference](https://auth.ubuntusoftware.net/auth/api/reference) |
+| Backup (workers.dev) | [auth-better-worker.gedw99.workers.dev](https://auth-better-worker.gedw99.workers.dev) |
 
 ## Architecture: SSO across multiple Workers
 
@@ -115,8 +114,8 @@ any flow beyond email+password (password reset, magic-link sign-in, OTP, etc.):
 Until those are checked: password sign-up works (proven end-to-end), but
 magic-link and OTP flows will silently `console.log` instead of delivering
 to inboxes. Test sink at `/auth/test/inbox?email=foo@test.ubuntusoftware.net`
-([ADR-007](docs/adr/)) covers automated tests but isn't the same as real-inbox
-delivery.
+([ADR-007](docs/adr/007-email-test-sink.md)) covers automated tests but
+isn't the same as real-inbox delivery.
 
 ## Test users
 
