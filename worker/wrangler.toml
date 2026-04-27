@@ -74,7 +74,7 @@ routes = [
 
 [env.production.vars]
 BETTER_AUTH_URL        = "https://auth.ubuntusoftware.net"
-AUTH_EMAIL_FROM        = "noreply@ubuntusoftware.net"
+AUTH_EMAIL_FROM        = "noreply@mail.ubuntusoftware.net"
 AUTH_EMAIL_FROM_NAME   = "Auth"
 # ADR-007: endpoint only serves @test.ubuntusoftware.net keys — harmless in prod
 AUTH_TEST_SINK_ENABLED = "true"

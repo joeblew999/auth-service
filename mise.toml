@@ -230,7 +230,8 @@ echo "$SECRET_VALUE" | wrangler secret put BETTER_AUTH_SECRET --env production
 #
 # These tasks wrap the CF API. They need a token with these scopes (in
 # addition to what `wrangler login` gives you):
-#   - Zone : Email Routing : Edit (covers Email Sending too)
+#   - Zone : Email Sending : Edit (the new CF Email Service scope —
+#     'Email Routing' is the OLD scope name, no longer offered in 2026)
 #
 # Set the token in fnox once: `fnox set CLOUDFLARE_API_TOKEN --global --provider keychain`
 # (you almost certainly already have it set — that's the same token CF
@@ -257,7 +258,7 @@ printf 'Zone read (zones list)................. '
 [ "$ZONE_ID" != "null" ] && echo "✓" || echo "✗"
 printf 'Workers Scripts edit (deploy:web)...... '
 curl -fsS -H "$AUTH" "$CF/accounts/$(wrangler whoami 2>&1 | grep -oE '[0-9a-f]{32}' | head -1)/workers/scripts" >/dev/null 2>&1 && echo "✓" || echo "✗"
-printf 'Email Routing edit (email:onboard)..... '
+printf 'Email Sending edit (email:onboard)..... '
 RESP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -H "$AUTH" "$CF/zones/$ZONE_ID/email/sending/subdomains")
 [ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — run: mise run cf:token:create)"
 """
@@ -280,13 +281,14 @@ without you clicking in the dashboard each time):
     • Workers KV Storage         : Edit       (session cache)
     • Workers R2 Storage         : Edit       (only if you add R2 later)
     • D1                         : Edit       (auth-better-db migrations)
-    • Email Routing Addresses    : Edit       (Email Service onboarding)
+    • Email Routing Addresses    : Edit       (verified-destinations list)
+    • Email Sending              : Edit       (the critical one — new CF Email Service)
     • Account Settings           : Read
 
   Zone permissions:
     • Zone                       : Read       (resolve ubuntusoftware.net)
     • Workers Routes             : Edit       (custom domains)
-    • Email Routing              : Edit       (Email Sending subdomains)
+    • DNS                        : Edit       (auto-provision SPF / DKIM / DMARC)
     • DNS                        : Edit       (auto-provision SPF/DKIM)
 
   Zone resources:
@@ -337,11 +339,11 @@ EXISTING_CODE=$(echo "$EXISTING" | tail -1)
 EXISTING_BODY=$(echo "$EXISTING" | sed '$d')
 if [ "$EXISTING_CODE" = "403" ] || [ "$EXISTING_CODE" = "401" ]; then
   echo "✗ HTTP $EXISTING_CODE from CF API." >&2
-  echo "  Your CLOUDFLARE_API_TOKEN is missing 'Zone : Email Routing : Edit' scope." >&2
+  echo "  Your CLOUDFLARE_API_TOKEN is missing 'Zone : Email Sending : Edit' scope." >&2
   echo
   echo "  Two ways to fix:" >&2
   echo "    a) https://dash.cloudflare.com/profile/api-tokens → edit your token →" >&2
-  echo "       add 'Zone : Email Routing : Edit' for $ZONE_NAME → save → fnox set CLOUDFLARE_API_TOKEN" >&2
+  echo "       add 'Zone : Email Sending : Edit' for $ZONE_NAME → save → fnox set CLOUDFLARE_API_TOKEN" >&2
   echo "    b) https://dash.cloudflare.com/?to=/:account/email/sending → Add domain →" >&2
   echo "       enter '$SUBDOMAIN' (one click since the zone is already on CF)" >&2
   echo
@@ -363,8 +365,8 @@ if echo "$RESP" | jq -e '.success == true' >/dev/null; then
   echo "  Then: mise run 10-deploy && mise run email:test"
 elif echo "$RESP" | jq -e '.errors[0].code == 10000' >/dev/null; then
   echo
-  echo "✗ Token missing 'Zone : Email Routing : Edit' scope. Either:" >&2
-  echo "    a) Regenerate CLOUDFLARE_API_TOKEN with Email Routing:Edit scope, then fnox set" >&2
+  echo "✗ Token missing 'Zone : Email Sending : Edit' scope. Either:" >&2
+  echo "    a) Regenerate CLOUDFLARE_API_TOKEN with 'Zone : Email Sending : Edit' scope, then fnox set" >&2
   echo "    b) Onboard manually in CF dashboard → Email Service → Email Sending → Add domain" >&2
   exit 1
 fi
