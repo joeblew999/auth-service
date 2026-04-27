@@ -3,11 +3,28 @@ pitchfork = "latest"
 bun       = "latest"
 node      = "latest"
 wrangler  = "latest"
+# fnox: secrets manager by jdx (same author as mise). Encrypts at rest with
+# age, key cached in macOS Keychain. Configured globally so the same secrets
+# are available across every project on this machine.
+"github:jdx/fnox"      = "latest"
+"aqua:FiloSottile/age" = "1"
+# GitHub CLI: used by secrets:sync-github. Pinned here so mise stays SSOT.
+"aqua:cli/cli"         = "2"
 
 [env]
 AUTH_BETTER_PORT     = "8792"
 AUTH_BETTER_WEB_PORT = "5174"
-AUTH_BETTER_PROD_URL = "https://auth-better-worker.gedw99.workers.dev"
+# Custom domain set by worker/wrangler.toml [env.production] routes. The
+# *.workers.dev URL still resolves but cookies set on .ubuntusoftware.net
+# only span subdomains of a registered domain (workers.dev is on the
+# public suffix list).
+AUTH_BETTER_PROD_URL = "https://auth.ubuntusoftware.net"
+
+# fnox: working copy of the age private key. Canonical copy is in macOS
+# Keychain (service=fnox, account=age-key). To restore on a new machine:
+#   security find-generic-password -s fnox -a age-key -w \
+#     > ~/.config/fnox/age.key && chmod 600 ~/.config/fnox/age.key
+FNOX_AGE_KEY_FILE = "~/.config/fnox/age.key"
 
 # ── Dev workflow ──────────────────────────────────────────────────────────────
 #
@@ -155,4 +172,51 @@ set -euo pipefail
 mise run 10-deploy
 mise run 10b-migrate-prod
 mise run 11-test-prod
+"""
+
+# ── Secrets (fnox → GitHub Actions) ──────────────────────────────────────────
+# https://fnox.jdx.dev — fnox is the local SSOT, backed by macOS Keychain.
+# Set values once globally with: fnox set <KEY> --global --provider keychain
+# Same pattern as joeblew999/ifc-lite so secrets are shared across projects.
+
+[tasks."secrets:list"]
+description = "Show the canonical secret mapping (fnox key → GitHub secret name)"
+run = """
+echo "Defined in scripts/sync-github-secrets.sh MAPPING table:"
+grep -E '^\\s+"[A-Z_]+\\s+[A-Z_]+"' scripts/sync-github-secrets.sh | sed 's/^/  /'
+echo
+echo "Uncomment optional rows in scripts/sync-github-secrets.sh as new"
+echo "secrets are added to fnox (e.g. social provider keys)."
+"""
+
+[tasks."secrets:status"]
+description = "Show fnox secrets vs GitHub repo secrets (read-only)"
+run = """
+echo "== fnox =="
+fnox list 2>/dev/null || echo "  (no config — run: fnox init --global)"
+echo
+echo "== GitHub repo secrets (joeblew999/auth-service) =="
+gh secret list --repo joeblew999/auth-service 2>/dev/null || echo "  (run: gh auth login)"
+"""
+
+[tasks."secrets:sync-github"]
+description = "Push secrets from fnox → GitHub Actions repo secrets"
+run = "bash scripts/sync-github-secrets.sh"
+
+[tasks."secrets:sync-github-dry"]
+description = "Dry-run of secrets:sync-github (show plan, change nothing)"
+run = "bash scripts/sync-github-secrets.sh --dry-run"
+
+[tasks."secrets:put-cf"]
+description = "Push BETTER_AUTH_SECRET from fnox → Cloudflare Worker secret store (production)"
+run = """
+set -euo pipefail
+SECRET_VALUE=$(fnox get BETTER_AUTH_SECRET 2>/dev/null || true)
+if [ -z "$SECRET_VALUE" ]; then
+  echo "BETTER_AUTH_SECRET not in fnox — generate one:" >&2
+  echo "  openssl rand -base64 32 | fnox set BETTER_AUTH_SECRET --global --provider keychain --stdin" >&2
+  exit 1
+fi
+cd worker
+echo "$SECRET_VALUE" | wrangler secret put BETTER_AUTH_SECRET --env production
 """
