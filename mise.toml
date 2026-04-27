@@ -748,7 +748,7 @@ description = "Verify the current CLOUDFLARE_API_TOKEN has the scopes needed for
 shell = "bash -c"
 run = """
 set -eu
-: "${CLOUDFLARE_API_TOKEN:=$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
 [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "✗ CLOUDFLARE_API_TOKEN not set (and not in fnox)"; exit 1; }
 
 CF="https://api.cloudflare.com/client/v4"
@@ -779,7 +779,7 @@ description = "Open the CF dashboard for your existing token + print every scope
 shell = "bash -c"
 run = """
 set -eu
-: "${CLOUDFLARE_API_TOKEN:=$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
 if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
   TOKEN_ID=$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
     https://api.cloudflare.com/client/v4/user/tokens/verify \
@@ -951,7 +951,7 @@ CFG="config/${ENV}.env"; set -a; source "$CFG"; set +a
 ZONE_NAME="$DOMAIN"
 SUBDOMAIN="${SUBDOMAIN_MAIL}.${DOMAIN}"
 echo "→ Using env=$ENV: zone=$ZONE_NAME subdomain=$SUBDOMAIN"
-: "${CLOUDFLARE_API_TOKEN:=$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
 [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "CLOUDFLARE_API_TOKEN not set (and not in fnox)"; exit 1; }
 
 CF="https://api.cloudflare.com/client/v4"
@@ -1009,7 +1009,7 @@ set -eu
 ENV="${ENV:-production}"
 CFG="config/${ENV}.env"; set -a; source "$CFG"; set +a
 ZONE_NAME="$DOMAIN"
-: "${CLOUDFLARE_API_TOKEN:=$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
 CF="https://api.cloudflare.com/client/v4"
 AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
 ZONE_ID=$(curl -fsS -H "$AUTH" "$CF/zones?name=$ZONE_NAME" | jq -r '.result[0].id')
@@ -1036,3 +1036,116 @@ curl -isS -X POST "$AUTH_BETTER_PROD_URL/auth/api/sign-in/magic-link" \
   --data "{\\"email\\":\\"$EMAIL\\"}" | head -3
 """
 
+
+# ── Users (admin tooling — direct D1 + Better Auth admin endpoints) ─────────
+# These tasks talk to the deployed prod D1 + Worker. They need
+# CLOUDFLARE_API_TOKEN with D1:Edit + Workers Scripts:Edit (already in our
+# canonical token). All tasks read ENV (default 'production') so you can
+# point them at staging/etc once that exists.
+
+[tasks."users:list"]
+description = "List most recent N users from prod D1. Override count: N=20 mise run users:list"
+shell = "bash -c"
+run = """
+set -eu
+ENV="${ENV:-production}"
+N="${N:-10}"
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+cd worker
+mise exec -- wrangler d1 execute auth-better-db --remote --env "$ENV" \
+  --command "SELECT email, username, displayUsername, datetime(createdAt) AS created FROM user ORDER BY createdAt DESC LIMIT $N" 2>&1 \
+  | grep -E '"email":|"username":|"displayUsername":|"created":' \
+  | sed 's/^[[:space:]]*//; s/,$//' || true
+"""
+
+[tasks."users:find"]
+description = "Find users by substring (matches email OR username). Usage: Q=joe mise run users:find"
+shell = "bash -c"
+run = """
+set -eu
+ENV="${ENV:-production}"
+: "${Q:?usage: Q=<substring> mise run users:find}"
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+cd worker
+mise exec -- wrangler d1 execute auth-better-db --remote --env "$ENV" \
+  --command "SELECT id, email, username, displayUsername, role, datetime(createdAt) AS created FROM user WHERE email LIKE '%${Q}%' OR username LIKE '%${Q}%' ORDER BY createdAt DESC LIMIT 20" 2>&1 \
+  | grep -E '"id":|"email":|"username":|"displayUsername":|"role":|"created":' \
+  | sed 's/^[[:space:]]*//; s/,$//' || true
+"""
+
+[tasks."users:show"]
+description = "Show one user + their org memberships. Usage: EMAIL=foo@bar.com mise run users:show"
+shell = "bash -c"
+run = """
+set -eu
+ENV="${ENV:-production}"
+: "${EMAIL:?usage: EMAIL=<email> mise run users:show}"
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+cd worker
+echo "=== user ==="
+mise exec -- wrangler d1 execute auth-better-db --remote --env "$ENV" \
+  --command "SELECT id, email, username, displayUsername, role, banned, emailVerified, twoFactorEnabled, datetime(createdAt) AS created FROM user WHERE email = '${EMAIL}'" 2>&1 \
+  | grep -E '"id":|"email":|"username":|"displayUsername":|"role":|"banned":|"emailVerified":|"twoFactorEnabled":|"created":' \
+  | sed 's/^[[:space:]]*//; s/,$//'
+echo
+echo "=== org memberships ==="
+mise exec -- wrangler d1 execute auth-better-db --remote --env "$ENV" \
+  --command "SELECT m.role AS member_role, o.name AS org_name, o.slug AS org_slug FROM member m JOIN organization o ON m.organizationId = o.id JOIN user u ON m.userId = u.id WHERE u.email = '${EMAIL}'" 2>&1 \
+  | grep -E '"member_role":|"org_name":|"org_slug":' \
+  | sed 's/^[[:space:]]*//; s/,$//'
+"""
+
+[tasks."users:make-admin"]
+description = "Promote a user to platform admin (sets user.role='admin' — separate from per-org roles). Usage: EMAIL=foo@bar.com mise run users:make-admin"
+shell = "bash -c"
+run = """
+set -eu
+ENV="${ENV:-production}"
+: "${EMAIL:?usage: EMAIL=<email> mise run users:make-admin}"
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+cd worker
+mise exec -- wrangler d1 execute auth-better-db --remote --env "$ENV" \
+  --command "UPDATE user SET role='admin' WHERE email='${EMAIL}'"
+echo "✓ ${EMAIL} promoted to admin. They can now use Better Auth's /admin/* API."
+"""
+
+[tasks."users:reset-password"]
+description = "Set a fresh random password for a user. Prints the new password (one-time, no email). Requires the CALLER to be a platform admin. Usage: EMAIL=foo@bar.com mise run users:reset-password"
+shell = "bash -c"
+run = """
+set -eu
+ENV="${ENV:-production}"
+: "${EMAIL:?usage: EMAIL=<email> mise run users:reset-password}"
+: "${AUTH_BETTER_PROD_URL:?Set AUTH_BETTER_PROD_URL}"
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+
+# Look up the user id from D1.
+cd worker
+USER_ID=$(mise exec -- wrangler d1 execute auth-better-db --remote --env "$ENV" \
+  --command "SELECT id FROM user WHERE email='${EMAIL}'" 2>&1 \
+  | grep -oE '"id":[[:space:]]*"[^"]+' | head -1 | sed 's/.*"//')
+[ -n "$USER_ID" ] || { echo "✗ no user with email=${EMAIL}"; exit 1; }
+echo "→ user id: $USER_ID"
+
+NEW_PW=$(openssl rand -base64 24)
+echo "→ new password: $NEW_PW"
+
+# Better Auth admin endpoint — needs the caller's session cookie + admin role.
+# This task is meant to be run from a logged-in browser session by an admin.
+# For server-side use without a session, use the Better Auth admin SDK or
+# update the credential account row directly (more invasive).
+#
+# Quick path: open the URL below in your already-signed-in admin browser
+# and run this fetch from DevTools console:
+echo
+echo "Open https://${AUTH_BETTER_PROD_URL#https://}/auth/api/admin/has-permission"
+echo "in your signed-in admin browser, then in DevTools console run:"
+echo
+cat <<JS
+fetch('/auth/api/admin/set-user-password', {
+  method: 'POST', credentials: 'include',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ userId: '${USER_ID}', newPassword: '${NEW_PW}' })
+}).then(r => r.json()).then(console.log)
+JS
+"""
