@@ -8,7 +8,7 @@
 # Required:
 #   - fnox CLI (provisioned via mise)
 #   - gh CLI authenticated to the target repo
-#   - Secrets present in fnox (e.g. via `fnox set KEY --global --provider keychain`)
+#   - Secrets present in fnox (e.g. via `fnox set KEY --global --provider age`)
 #
 # Usage:
 #   bash scripts/sync-github-secrets.sh                  # default repo
@@ -39,7 +39,7 @@ MAPPING=(
   "CLOUDFLARE_ACCOUNT_ID  CLOUDFLARE_ACCOUNT_ID"
 
   # Better Auth cookie/session signer. Generate with:
-  #   openssl rand -base64 32 | fnox set BETTER_AUTH_SECRET --global --provider keychain --stdin
+  #   openssl rand -base64 32 | fnox set BETTER_AUTH_SECRET --global --provider age
   # Pushed to the deployed Worker via `mise run secrets:put-cf` (separate
   # path — Worker secrets live on Cloudflare, not in GitHub Actions).
   # Listed here for the dry-run inventory only.

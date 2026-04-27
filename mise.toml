@@ -188,7 +188,7 @@ mise run 11-test-prod
 
 # ── Secrets (fnox → GitHub Actions) ──────────────────────────────────────────
 # https://fnox.jdx.dev — fnox is the local SSOT, backed by macOS Keychain.
-# Set values once globally with: fnox set <KEY> --global --provider keychain
+# Set values once globally with: fnox set <KEY> --global --provider age
 # Same pattern as joeblew999/ifc-lite so secrets are shared across projects.
 
 [tasks."secrets:list"]
@@ -226,7 +226,7 @@ set -euo pipefail
 SECRET_VALUE=$(fnox get BETTER_AUTH_SECRET 2>/dev/null || true)
 if [ -z "$SECRET_VALUE" ]; then
   echo "BETTER_AUTH_SECRET not in fnox — generate one:" >&2
-  echo "  openssl rand -base64 32 | fnox set BETTER_AUTH_SECRET --global --provider keychain --stdin" >&2
+  echo "  openssl rand -base64 32 | fnox set BETTER_AUTH_SECRET --global --provider age" >&2
   exit 1
 fi
 cd worker
@@ -243,7 +243,7 @@ echo
 read -r -p "Type 'rotate' to continue: " CONFIRM
 [ "$CONFIRM" = "rotate" ] || { echo "Aborted."; exit 0; }
 NEW=$(openssl rand -base64 32)
-printf '%s' "$NEW" | fnox set BETTER_AUTH_SECRET --global --provider keychain --stdin
+printf '%s' "$NEW" | fnox set BETTER_AUTH_SECRET --global --provider age
 echo "✓ Saved to fnox."
 cd worker
 printf '%s' "$NEW" | wrangler secret put BETTER_AUTH_SECRET --env production
@@ -266,7 +266,7 @@ run = "cd worker && wrangler secret list --env production"
 #   - Zone : Email Sending : Edit (the new CF Email Service scope —
 #     'Email Routing' is the OLD scope name, no longer offered in 2026)
 #
-# Set the token in fnox once: `fnox set CLOUDFLARE_API_TOKEN --global --provider keychain`
+# Set the token in fnox once: `fnox set CLOUDFLARE_API_TOKEN --global --provider age`
 # (you almost certainly already have it set — that's the same token CF
 # Workers deploy uses).
 
@@ -346,7 +346,7 @@ VERIFY=$(curl -sS -H "Authorization: Bearer $NEW_TOKEN" "https://api.cloudflare.
 [ "$VERIFY" = "true" ] || { echo "✗ token verification failed — not saving"; exit 1; }
 
 echo "✓ Token verified. Saving to fnox..."
-printf '%s' "$NEW_TOKEN" | fnox set CLOUDFLARE_API_TOKEN --global --provider keychain --stdin
+printf '%s' "$NEW_TOKEN" | fnox set CLOUDFLARE_API_TOKEN --global --provider age
 echo "✓ Saved. Run 'mise run cf:token:check' to confirm scopes."
 """
 
@@ -390,10 +390,10 @@ echo
 [ -n "$SECRETKEY" ] || { echo "✗ empty secret, aborting"; exit 1; }
 
 echo "→ Saving SITE key to fnox (TURNSTILE_SITE_KEY, public — safe to bake into web build)..."
-printf '%s' "$SITEKEY" | fnox set TURNSTILE_SITE_KEY --global --provider keychain --stdin
+printf '%s' "$SITEKEY" | fnox set TURNSTILE_SITE_KEY --global --provider age
 
 echo "→ Saving SECRET key to fnox (TURNSTILE_SECRET_KEY, server-only)..."
-printf '%s' "$SECRETKEY" | fnox set TURNSTILE_SECRET_KEY --global --provider keychain --stdin
+printf '%s' "$SECRETKEY" | fnox set TURNSTILE_SECRET_KEY --global --provider age
 
 echo "→ Pushing SECRET key to deployed Worker..."
 cd worker
