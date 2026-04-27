@@ -211,7 +211,7 @@ for any gap:
 
 ```sh
 mise run setup:check                         # default env: production
-mise run setup:check -- --env staging        # diagnose a different env
+ENV=staging mise run setup:check        # diagnose a different env
 ```
 
 Use this whenever something's wrong or before opening a PR. Exit code
@@ -238,19 +238,19 @@ cp config/staging.env.example config/myorg.env
 $EDITOR config/myorg.env       # set DOMAIN=mycompany.com, WORKER_NAME=...
 
 # 2. Provision Cloudflare resources (D1 + KV + writes new IDs back)
-mise run cf:provision -- --env myorg
+ENV=myorg mise run cf:provision
 
 # 3. Onboard the email subdomain so magic links deliver
-mise run email:onboard -- --env myorg
+ENV=myorg mise run email:onboard
 
 # 4. Mint + push BETTER_AUTH_SECRET (if not already done in fnox)
 mise run secrets:gen-better-auth
 
 # 5. Deploy
-mise run 10-deploy -- --env myorg
+ENV=myorg mise run 10-deploy
 
 # 6. Verify
-mise run setup:check -- --env myorg
+ENV=myorg mise run setup:check
 ```
 
 Total: ~5 minutes once `mise run cf:token:create` has been run once
@@ -258,7 +258,7 @@ Total: ~5 minutes once `mise run cf:token:create` has been run once
 
 ### Switch your default env
 
-To stop typing `-- --env myorg` every command:
+To stop typing the `ENV=myorg` env var every command:
 
 ```sh
 mise run env:use -- myorg          # writes .mise.local.toml (gitignored)
@@ -269,8 +269,8 @@ mise run env:list                  # show every env config + which is active
 
 - `config/<env>.env` — single source of truth for the env's values
 - `worker/wrangler.toml.template` — Cloudflare config with `${VAR}` placeholders
-- `mise run wrangler:generate -- --env <name>` — envsubst's the template → `worker/wrangler.toml` (gitignored)
-- Every other mise task that touches deploy or CF API takes `-- --env <name>` and re-generates the wrangler.toml first
+- `ENV=<name> mise run wrangler:generate` — envsubst's the template → `worker/wrangler.toml` (gitignored)
+- Every other mise task that touches deploy or CF API takes the `ENV=<name>` env var and re-generates the wrangler.toml first
 
 So an `auth-better-worker` (production) and an `auth-staging-worker`
 (staging) Worker can coexist in the same Cloudflare account. Sessions

@@ -123,24 +123,18 @@ run = "lsof -ti:$AUTH_BETTER_PORT | xargs kill -9 2>/dev/null || true"
 # ── Phase 3: Deploy + verify ──────────────────────────────────────────────────
 
 [tasks."10-deploy"]
-description = "Phase 3 — Build web SPA then deploy worker + assets to Cloudflare. Default env: production. Override: mise run 10-deploy -- --env staging"
+description = "Phase 3 — Build web SPA then deploy worker + assets to Cloudflare. Default env: production. Override: ENV=staging mise run 10-deploy"
 shell = "bash -c"
 run = """
 set -eu
 ROOT="$(pwd)"
 
-ENV="production"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --env) ENV="$2"; shift 2 ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
-  esac
-done
+ENV="${ENV:-production}"
 
 # Regenerate worker/wrangler.toml from worker/wrangler.toml.template +
 # config/${ENV}.env. Single source of truth for everything that varies
 # per env (domain, worker name, D1/KV IDs).
-mise run wrangler:generate -- --env "$ENV"
+ENV="$ENV" mise run wrangler:generate
 
 # Always force-populate CLOUDFLARE_API_TOKEN from fnox so deploys don't
 # silently fall back to wrangler's stored OAuth token (which expires
@@ -269,40 +263,28 @@ shell = "bash -c"
 run = "bash scripts/sync-github-secrets.sh --dry-run"
 
 [tasks."secrets:put-cf"]
-description = "Push BETTER_AUTH_SECRET from fnox → Cloudflare Worker secret store. Default env: production. Override: -- --env staging"
+description = "Push BETTER_AUTH_SECRET from fnox → Cloudflare Worker secret store. Default env: production. Override: ENV=staging mise run ..."
 shell = "bash -c"
 run = """
 set -eu
-ENV="production"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --env) ENV="$2"; shift 2 ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
-  esac
-done
+ENV="${ENV:-production}"
 SECRET_VALUE=$(fnox get BETTER_AUTH_SECRET 2>/dev/null || true)
 if [ -z "$SECRET_VALUE" ]; then
   echo "BETTER_AUTH_SECRET not in fnox — generate one:" >&2
   echo "  openssl rand -base64 32 | fnox set BETTER_AUTH_SECRET --global --provider age" >&2
   exit 1
 fi
-mise run wrangler:generate -- --env "$ENV"
+ENV="$ENV" mise run wrangler:generate
 cd worker
 echo "$SECRET_VALUE" | wrangler secret put BETTER_AUTH_SECRET --env "$ENV"
 """
 
 [tasks."secrets:rotate-better-auth"]
-description = "Rotate BETTER_AUTH_SECRET (invalidates ALL active sessions). Default env: production. Override: -- --env staging"
+description = "Rotate BETTER_AUTH_SECRET (invalidates ALL active sessions). Default env: production. Override: ENV=staging mise run ..."
 shell = "bash -c"
 run = """
 set -eu
-ENV="production"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --env) ENV="$2"; shift 2 ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
-  esac
-done
+ENV="${ENV:-production}"
 echo "⚠️  This will invalidate every active session in env=$ENV."
 echo "    Every signed-in user will be forced to re-auth on next request."
 echo
@@ -311,7 +293,7 @@ read -r -p "Type 'rotate' to continue: " CONFIRM
 NEW=$(openssl rand -base64 32)
 printf '%s' "$NEW" | fnox set BETTER_AUTH_SECRET --global --provider age
 echo "✓ Saved to fnox."
-mise run wrangler:generate -- --env "$ENV"
+ENV="$ENV" mise run wrangler:generate
 cd worker
 printf '%s' "$NEW" | wrangler secret put BETTER_AUTH_SECRET --env "$ENV"
 echo "✓ Pushed to deployed Worker (env=$ENV). New sessions use the new secret."
@@ -343,8 +325,7 @@ description = "Provision Cloudflare D1 + KV for a new env. Reads config/<env>.en
 shell = "bash -c"
 run = """
 set -eu
-ENV="${1:-production}"
-[ "$ENV" != "--env" ] || ENV="${2:-production}"
+ENV="${ENV:-production}"
 CFG="config/${ENV}.env"
 [ -f "$CFG" ] || { echo "✗ $CFG not found. Copy config/template.env first."; exit 1; }
 
@@ -396,14 +377,14 @@ else
 fi
 
 # 3. Regenerate wrangler.toml with the new IDs.
-mise run wrangler:generate -- --env "$ENV"
+ENV="$ENV" mise run wrangler:generate
 
 echo
 echo "✓ Provisioning done for env=$ENV. Next:"
 echo "    mise run cf:token:create   # if you don't already have CLOUDFLARE_API_TOKEN with the right scopes"
-echo "    mise run email:onboard -- --env $ENV   # provision the sending subdomain"
+echo "    ENV=$ENV mise run email:onboard   # provision the sending subdomain"
 echo "    mise run secrets:gen-better-auth   # mint and push BETTER_AUTH_SECRET"
-echo "    mise run 10-deploy -- --env $ENV"
+echo "    ENV=$ENV mise run 10-deploy"
 """
 
 [tasks."env:list"]
@@ -434,21 +415,15 @@ cat > .mise.local.toml <<EOF
 [env]
 MISE_ENV_NAME = "${NAME}"
 EOF
-echo "✓ Default env set to '${NAME}' (.mise.local.toml). Override per-call with: -- --env <other>"
+echo "✓ Default env set to '${NAME}' (.mise.local.toml). Override per-call with: ENV=<other> mise run ..."
 """
 
 [tasks."wrangler:generate"]
-description = "Render worker/wrangler.toml from worker/wrangler.toml.template + config/<env>.env (default env: production). Override with: mise run wrangler:generate -- --env staging"
+description = "Render worker/wrangler.toml from worker/wrangler.toml.template + config/<env>.env (default env: production). Override with: ENV=staging mise run wrangler:generate"
 shell = "bash -c"
 run = """
 set -eu
-ENV="production"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --env) ENV="$2"; shift 2 ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
-  esac
-done
+ENV="${ENV:-production}"
 CFG="config/${ENV}.env"
 [ -f "$CFG" ] || { echo "✗ $CFG not found. Copy config/template.env to start a new env." >&2; exit 1; }
 
@@ -474,17 +449,11 @@ echo "✓ Generated $OUT for env=$ENV"
 """
 
 [tasks."consumer:scaffold"]
-description = "Print copy-paste-ready boilerplate for a NEW Cloudflare Worker that wants to consume this auth-service via Service Bindings. Default env: production. Override: -- --env staging"
+description = "Print copy-paste-ready boilerplate for a NEW Cloudflare Worker that wants to consume this auth-service via Service Bindings. Default env: production. Override: ENV=staging mise run ..."
 shell = "bash -c"
 run = """
 set -eu
-ENV="production"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --env) ENV="$2"; shift 2 ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
-  esac
-done
+ENV="${ENV:-production}"
 CFG="config/${ENV}.env"
 [ -f "$CFG" ] || { echo "✗ $CFG not found"; exit 1; }
 set -a; source "$CFG"; set +a
@@ -584,12 +553,12 @@ KEY_PATH="${FNOX_AGE_KEY_FILE:-~/.config/fnox/age.key}"
 KEY_PATH="${KEY_PATH/#\\~/$HOME}"
 [ -f "$KEY_PATH" ] || mise run fnox:init
 fnox get CLOUDFLARE_API_TOKEN >/dev/null 2>&1 || mise run cf:token:create
-mise run cf:provision -- --env "$ENV"
+ENV="$ENV" mise run cf:provision
 fnox get TURNSTILE_SITE_KEY >/dev/null 2>&1 || mise run cf:turnstile:create
-mise run email:onboard -- --env "$ENV"
+ENV="$ENV" mise run email:onboard
 fnox get BETTER_AUTH_SECRET >/dev/null 2>&1 || mise run secrets:gen-better-auth
-mise run 10-deploy -- --env "$ENV"
-mise run setup:check -- --env "$ENV"
+ENV="$ENV" mise run 10-deploy
+ENV="$ENV" mise run setup:check
 
 CFG="config/${ENV}.env"; set -a; source "$CFG"; set +a
 echo
@@ -602,17 +571,11 @@ echo "════════════════════════�
 """
 
 [tasks."setup:check"]
-description = "Diagnose dev/deploy prerequisites — tells you what's missing and what to run next. Default env: production. Override: -- --env staging"
+description = "Diagnose dev/deploy prerequisites — tells you what's missing and what to run next. Default env: production. Override: ENV=staging mise run ..."
 shell = "bash -c"
 run = """
 set -eu
-ENV="production"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --env) ENV="$2"; shift 2 ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
-  esac
-done
+ENV="${ENV:-production}"
 echo "Checking env=$ENV"
 echo
 ok=0; warn=0; bad=0
@@ -887,17 +850,11 @@ echo "rebuild + redeploy."
 """
 
 [tasks."email:onboard"]
-description = "Provision ${SUBDOMAIN_MAIL}.${DOMAIN} as the sending subdomain so CF Email Service accepts arbitrary recipients. Default env: production. Override: -- --env staging"
+description = "Provision ${SUBDOMAIN_MAIL}.${DOMAIN} as the sending subdomain so CF Email Service accepts arbitrary recipients. Default env: production. Override: ENV=staging mise run ..."
 shell = "bash -c"
 run = """
 set -eu
-ENV="production"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --env) ENV="$2"; shift 2 ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
-  esac
-done
+ENV="${ENV:-production}"
 CFG="config/${ENV}.env"; set -a; source "$CFG"; set +a
 ZONE_NAME="$DOMAIN"
 SUBDOMAIN="${SUBDOMAIN_MAIL}.${DOMAIN}"
@@ -953,17 +910,11 @@ fi
 """
 
 [tasks."email:status"]
-description = "Show sending subdomain status + DNS records CF set up. Default env: production. Override: -- --env staging"
+description = "Show sending subdomain status + DNS records CF set up. Default env: production. Override: ENV=staging mise run ..."
 shell = "bash -c"
 run = """
 set -eu
-ENV="production"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --env) ENV="$2"; shift 2 ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
-  esac
-done
+ENV="${ENV:-production}"
 CFG="config/${ENV}.env"; set -a; source "$CFG"; set +a
 ZONE_NAME="$DOMAIN"
 : "${CLOUDFLARE_API_TOKEN:=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
@@ -992,3 +943,4 @@ curl -isS -X POST "$AUTH_BETTER_PROD_URL/auth/api/sign-in/magic-link" \
   -H "Origin: $AUTH_BETTER_PROD_URL" \
   --data "{\\"email\\":\\"$EMAIL\\"}" | head -3
 """
+
