@@ -71,7 +71,27 @@ that var is dev-only and stays out of prod.
 CORS (no Origin header). Do NOT replace with `(o) => o` — that
 re-opens CSRF surface.
 
-## Operational facts
+## Multi-env model (read this BEFORE editing wrangler.toml)
+
+**Every value that varies per deployment lives in `config/<env>.env`.**
+`worker/wrangler.toml` is **generated** from `worker/wrangler.toml.template`
++ the active env's config and is **gitignored**. DO NOT edit it directly —
+your changes get blown away next deploy.
+
+  - `config/production.env` → real production values (the operational facts below)
+  - `config/template.env` → schema for forking
+  - `config/staging.env.example` → copy + fill for a parallel staging env
+
+Every CF-touching mise task accepts `-- --env <name>` (default: `production`).
+Examples:
+  - `mise run 10-deploy -- --env staging`
+  - `mise run cf:provision -- --env myorg`
+  - `mise run setup:check -- --env staging`
+
+To stop typing `-- --env <x>`: `mise run env:use -- <x>` writes
+`.mise.local.toml` (gitignored) setting that as the default.
+
+## Operational facts (production env — see config/production.env for the real source)
 
 | Fact | Value |
 |---|---|

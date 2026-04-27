@@ -443,6 +443,132 @@ envsubst < worker/wrangler.toml.template > "$OUT"
 echo "✓ Generated $OUT for env=$ENV"
 """
 
+[tasks."consumer:scaffold"]
+description = "Print copy-paste-ready boilerplate for a NEW Cloudflare Worker that wants to consume this auth-service via Service Bindings. Default env: production. Override: -- --env staging"
+run = """
+set -euo pipefail
+ENV="production"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env) ENV="$2"; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+CFG="config/${ENV}.env"
+[ -f "$CFG" ] || { echo "✗ $CFG not found"; exit 1; }
+set -a; source "$CFG"; set +a
+
+cat <<EOF
+
+════════════════════════════════════════════════════════════════════
+  Wire any Worker on *.${DOMAIN} as a consumer of ${WORKER_NAME}
+════════════════════════════════════════════════════════════════════
+
+Step 1: Add to your consumer Worker's wrangler.jsonc (or wrangler.toml)
+─────────────────────────────────────────────────────────────────────
+
+{
+  "name": "your-app",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-10-08",
+  "services": [
+    { "binding": "AUTH", "service": "${WORKER_NAME}" }
+  ],
+  "routes": [
+    { "pattern": "your-app.${DOMAIN}", "custom_domain": true }
+  ]
+}
+
+  • Both Workers must be in the same Cloudflare account.
+  • The custom domain MUST be on .${DOMAIN} for the session cookie
+    (set on .${DOMAIN}) to be sent by the browser.
+
+Step 2: Drop this helper into your Worker (5 lines)
+─────────────────────────────────────────────────────────────────────
+
+interface Env { AUTH: Fetcher; /* + your other bindings */ }
+
+async function getAuthUser(req: Request, env: Env) {
+  const r = await env.AUTH.fetch(new Request('https://auth/auth/api/get-session', {
+    headers: { cookie: req.headers.get('cookie') ?? '' }
+  }));
+  return r.ok ? (await r.json() as { user?: unknown } | null)?.user ?? null : null;
+}
+
+Step 3: Use it in any route
+─────────────────────────────────────────────────────────────────────
+
+export default {
+  async fetch(req: Request, env: Env) {
+    const user = await getAuthUser(req, env);
+    if (!user) {
+      return Response.redirect(
+        'https://${SUBDOMAIN_AUTH}.${DOMAIN}/auth/sign-in?next=' + encodeURIComponent(req.url),
+        302
+      );
+    }
+    return Response.json({ greeting: 'hi ' + user.email });
+  },
+};
+
+That's it. 'wrangler deploy' your consumer + the binding works
+immediately — no extra setup on the auth-service side.
+
+Reference implementation:
+  https://github.com/joeblew999/ifc-lite/blob/cloudflare/deploy/apps/viewer/worker/index.ts
+EOF
+"""
+
+[tasks."setup:bootstrap"]
+description = "One command to take a fresh fork from zero to deployed. Walks every prerequisite, calls every other setup task in the right order, asks before each step that costs money or invalidates sessions."
+run = """
+set -euo pipefail
+ENV="${1:-production}"
+[ "$ENV" != "--env" ] || ENV="${2:-production}"
+
+echo "════════════════════════════════════════════════════════════════════"
+echo "  setup:bootstrap — fresh fork → live deploy for env=$ENV"
+echo "════════════════════════════════════════════════════════════════════"
+echo
+echo "Prerequisites (you do these once, ever, on this machine):"
+echo "  • install + activate mise"
+echo "  • mise install"
+echo "  • wrangler login + gh auth login"
+echo
+echo "This task will (in order):"
+echo "  1. fnox:init                         (skipped if you already have an age key)"
+echo "  2. cf:token:create                   (skipped if CLOUDFLARE_API_TOKEN already in fnox)"
+echo "  3. cf:provision -- --env $ENV        (skipped if D1/KV IDs already in config/$ENV.env)"
+echo "  4. cf:turnstile:create               (skipped if TURNSTILE_*_KEY already in fnox)"
+echo "  5. email:onboard -- --env $ENV       (creates mail subdomain, idempotent)"
+echo "  6. secrets:gen-better-auth           (only if BETTER_AUTH_SECRET not in fnox)"
+echo "  7. 10-deploy -- --env $ENV"
+echo "  8. setup:check -- --env $ENV"
+echo
+read -r -p "Continue? [y/N] " CONFIRM
+[ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ] || { echo "Aborted."; exit 0; }
+
+KEY_PATH="${FNOX_AGE_KEY_FILE:-~/.config/fnox/age.key}"
+KEY_PATH="${KEY_PATH/#\\~/$HOME}"
+[ -f "$KEY_PATH" ] || mise run fnox:init
+fnox get CLOUDFLARE_API_TOKEN >/dev/null 2>&1 || mise run cf:token:create
+mise run cf:provision -- --env "$ENV"
+fnox get TURNSTILE_SITE_KEY >/dev/null 2>&1 || mise run cf:turnstile:create
+mise run email:onboard -- --env "$ENV"
+fnox get BETTER_AUTH_SECRET >/dev/null 2>&1 || mise run secrets:gen-better-auth
+mise run 10-deploy -- --env "$ENV"
+mise run setup:check -- --env "$ENV"
+
+CFG="config/${ENV}.env"; set -a; source "$CFG"; set +a
+echo
+echo "════════════════════════════════════════════════════════════════════"
+echo "  ✓ Done. Your auth service is live at:"
+echo "       https://${SUBDOMAIN_AUTH}.${DOMAIN}"
+echo "  Test it: open the URL, sign up, then verify with:"
+echo "       mise run email:test -- --env $ENV"
+echo "════════════════════════════════════════════════════════════════════"
+"""
+
 [tasks."setup:check"]
 description = "Diagnose dev/deploy prerequisites — tells you what's missing and what to run next. Default env: production. Override: -- --env staging"
 run = """
