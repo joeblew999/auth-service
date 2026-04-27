@@ -18,16 +18,17 @@
 
 name: Deploy (mise)
 
-# KNOWN ISSUE: CI deploy currently returns 'Could not route' [code 7003]
-# from Cloudflare on `wrangler deploy --env production` even though the
-# same call shape works from a laptop with the same CLOUDFLARE_API_TOKEN
-# + CLOUDFLARE_ACCOUNT_ID. Token permissions, worker name, account ID
-# all verified by direct CF API call. Currently triggered manually via
-# workflow_dispatch only — push trigger disabled until root-cause is
-# found, to avoid red badges on every commit. Laptop deploy via
-# `mise run 10-deploy` is the documented production path for now.
-
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'worker/**'
+      - 'web/**'
+      - '.github/workflows/deploy-mise.yml'
+      - 'mise.toml'
+      - 'config/**'
+      - 'scripts/cf-diag.sh'
   workflow_dispatch:
 
 concurrency:
