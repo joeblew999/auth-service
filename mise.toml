@@ -1,3 +1,9 @@
+# Force bash for every task so `set -o pipefail`, `[[ ... ]]`, `read -s`,
+# etc. work on Ubuntu CI runners (where /bin/sh -> dash). On macOS this
+# is a no-op since bash is already default.
+[task_config]
+shell = "bash -c"
+
 [tools]
 pitchfork = "latest"
 bun       = "latest"
