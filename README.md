@@ -63,9 +63,10 @@ In your Worker code (Hono, plain fetch, anything):
 ```ts
 interface Env { AUTH: Fetcher; /* ...your other bindings... */ }
 
-// Forward the browser session cookie to auth-better-worker via the
-// Service Binding. The hostname is irrelevant — Service Bindings route
-// by service name, not DNS — but the URL must be valid.
+// AUTHENTICATION — who is the request from?
+// Forward the browser session cookie via the Service Binding (internal
+// CF call, ~1 ms, no public DNS hop). The hostname in the URL is
+// irrelevant; Service Bindings route by service name, not DNS.
 async function getAuthUser(req: Request, env: Env) {
   const r = await env.AUTH.fetch(new Request('https://auth/auth/api/get-session', {
     headers: { cookie: req.headers.get('cookie') ?? '' }
@@ -73,11 +74,35 @@ async function getAuthUser(req: Request, env: Env) {
   return r.ok ? (await r.json() as { user?: unknown } | null)?.user ?? null : null;
 }
 
+// AUTHORIZATION — what role does the user have in their active org?
+// Returns { id, organizationId, userId, role, ... } or null when the
+// session has no active org (just-signed-up users until they create
+// or accept one). Use `member.role` for RBAC checks: 'owner' / 'admin'
+// / 'member' by default (extend via Better Auth's organization plugin).
+async function getOrgMember(req: Request, env: Env) {
+  const r = await env.AUTH.fetch(new Request('https://auth/auth/api/organization/get-active-member', {
+    headers: { cookie: req.headers.get('cookie') ?? '' }
+  }));
+  if (!r.ok) return null;
+  const m = await r.json();
+  return (m && typeof m === 'object' && 'role' in m) ? m : null;
+}
+
 export default {
   async fetch(req: Request, env: Env) {
+    // Gate: must be signed in
     const user = await getAuthUser(req, env);
     if (!user) return new Response('please sign in', { status: 401 });
-    // user.id, user.email, etc — full user object
+
+    // Gate: admin-only routes
+    if (new URL(req.url).pathname.startsWith('/api/admin/')) {
+      const member = await getOrgMember(req, env);
+      if (!member) return new Response('not in any org', { status: 403 });
+      if (member.role !== 'admin' && member.role !== 'owner') {
+        return new Response('admin only', { status: 403 });
+      }
+    }
+
     return Response.json({ greeting: `hi ${user.email}` });
   },
 };
@@ -90,6 +115,13 @@ return Response.redirect(`https://auth.ubuntusoftware.net/auth/sign-in?next=${en
 
 That's it. Reference implementation:
 [`joeblew999/ifc-lite/apps/viewer/worker/index.ts`](https://github.com/joeblew999/ifc-lite/blob/cloudflare/deploy/apps/viewer/worker/index.ts).
+
+**On authorization beyond org-role RBAC:** for resource-relationship authz
+("Joe can edit IFC #42 because Alice shared it with him"), layer
+[OpenFGA](https://openfga.dev) on top — Better Auth + OpenFGA is the
+recommended Phase 2 pattern. Don't add it until a real "share specific
+resource with specific user" feature lands; org-role RBAC covers most
+B2B SaaS to ~10k users.
 
 ## Email — Cloudflare Email Service (status: code wired, real-inbox delivery untested)
 

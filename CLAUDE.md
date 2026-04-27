@@ -71,6 +71,28 @@ that var is dev-only and stays out of prod.
 CORS (no Origin header). Do NOT replace with `(o) => o` — that
 re-opens CSRF surface.
 
+### Authorization: hybrid RBAC now, OpenFGA later
+- **Authentication** (who you are) — Better Auth, done.
+- **Authorization** (what you can do) — split by layer:
+  - **Org-level RBAC** — Better Auth `organization` plugin. Already
+    enabled. Roles: `owner` / `admin` / `member` (extend per role
+    via the plugin's `permissions` config). Consumers query via the
+    `getOrgMember()` helper (see `consumer:scaffold` for shape).
+  - **Resource-row authz** — each consumer owns its own. Tag every
+    row with `org_id`; filter queries by active org; check ownership
+    or shared-with relations in the consumer's own DB.
+  - **Resource-relationship authz** (Zanzibar-style: "Alice shared
+    file F with Bob") — Phase 2: bolt on **OpenFGA** when a real
+    "share specific resource with specific user" feature lands.
+    Don't add it speculatively. Better Auth + OpenFGA is the
+    recommended pattern when needed.
+- **Pattern in consumer code:**
+  ```ts
+  const member = await getOrgMember(req, env);
+  if (!member) return new Response('not in any org', { status: 403 });
+  if (member.role !== 'admin') return new Response('admin only', { status: 403 });
+  ```
+
 ## Gotchas list (re-litigated more than once — don't repeat)
 
 These are real bugs we hit + diagnosed during build-out. Each one

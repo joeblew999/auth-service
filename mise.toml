@@ -490,11 +490,12 @@ Step 1: Add to your consumer Worker's wrangler.jsonc (or wrangler.toml)
   • The custom domain MUST be on .${DOMAIN} for the session cookie
     (set on .${DOMAIN}) to be sent by the browser.
 
-Step 2: Drop this helper into your Worker (5 lines)
+Step 2: Drop these two helpers into your Worker (~15 lines)
 ─────────────────────────────────────────────────────────────────────
 
 interface Env { AUTH: Fetcher; /* + your other bindings */ }
 
+// AUTHENTICATION — who is the request from?
 async function getAuthUser(req: Request, env: Env) {
   const r = await env.AUTH.fetch(new Request('https://auth/auth/api/get-session', {
     headers: { cookie: req.headers.get('cookie') ?? '' }
@@ -502,7 +503,19 @@ async function getAuthUser(req: Request, env: Env) {
   return r.ok ? (await r.json() as { user?: unknown } | null)?.user ?? null : null;
 }
 
-Step 3: Use it in any route
+// AUTHORIZATION — what role does the user have in their active org?
+// Returns { id, organizationId, userId, role, ... } or null if no active org.
+// Use member.role for RBAC: 'owner' / 'admin' / 'member'.
+async function getOrgMember(req: Request, env: Env) {
+  const r = await env.AUTH.fetch(new Request('https://auth/auth/api/organization/get-active-member', {
+    headers: { cookie: req.headers.get('cookie') ?? '' }
+  }));
+  if (!r.ok) return null;
+  const m = await r.json();
+  return (m && typeof m === 'object' && 'role' in m) ? m : null;
+}
+
+Step 3: Use them in your routes
 ─────────────────────────────────────────────────────────────────────
 
 export default {
@@ -514,6 +527,16 @@ export default {
         302
       );
     }
+
+    // RBAC: only admins can hit /api/admin/*
+    if (new URL(req.url).pathname.startsWith('/api/admin/')) {
+      const member = await getOrgMember(req, env);
+      if (!member) return new Response('not in any org', { status: 403 });
+      if (member.role !== 'admin' && member.role !== 'owner') {
+        return new Response('admin only', { status: 403 });
+      }
+    }
+
     return Response.json({ greeting: 'hi ' + user.email });
   },
 };
