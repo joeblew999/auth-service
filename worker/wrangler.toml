@@ -82,6 +82,15 @@ AUTH_TEST_SINK_ENABLED = "true"
 # every subdomain"; absence in [vars] means dev cookies stay localhost-scoped.
 COOKIE_DOMAIN          = ".ubuntusoftware.net"
 
+# Assets binding must be re-declared per-environment — wrangler doesn't
+# inherit the top-level [assets] block. Without this, c.env.ASSETS is
+# undefined in production and the SPA fallback throws TypeError → 500
+# on any non-asset path (e.g. /auth/sign-in goes through React Router).
+[env.production.assets]
+directory          = "../web/dist"
+binding            = "ASSETS"
+not_found_handling = "single-page-application"
+
 [[env.production.send_email]]
 name = "SEND_EMAIL"
 
