@@ -220,3 +220,104 @@ fi
 cd worker
 echo "$SECRET_VALUE" | wrangler secret put BETTER_AUTH_SECRET --env production
 """
+
+# ── Email Service onboarding ──────────────────────────────────────────────────
+# Cloudflare's NEW Email Service (beta) requires onboarding a sending
+# subdomain (mail.ubuntusoftware.net) before env.SEND_EMAIL.send() can
+# deliver to arbitrary external recipients. Without this, the binding
+# falls back to legacy Email Routing semantics and rejects unverified
+# destinations with "destination address is not a verified address".
+#
+# These tasks wrap the CF API. They need a token with these scopes (in
+# addition to what `wrangler login` gives you):
+#   - Zone : Email Routing : Edit (covers Email Sending too)
+#
+# Set the token in fnox once: `fnox set CLOUDFLARE_API_TOKEN --global --provider keychain`
+# (you almost certainly already have it set — that's the same token CF
+# Workers deploy uses).
+
+[tasks."email:onboard"]
+description = "Provision mail.ubuntusoftware.net as the sending subdomain so CF Email Service accepts arbitrary recipients (idempotent)"
+env = { ZONE_NAME = "ubuntusoftware.net", SUBDOMAIN = "mail.ubuntusoftware.net" }
+run = """
+set -euo pipefail
+: "${CLOUDFLARE_API_TOKEN:=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+[ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "CLOUDFLARE_API_TOKEN not set (and not in fnox)"; exit 1; }
+
+CF="https://api.cloudflare.com/client/v4"
+AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+
+echo "→ Resolving zone $ZONE_NAME..."
+ZONE_ID=$(curl -fsS -H "$AUTH" "$CF/zones?name=$ZONE_NAME" | jq -r '.result[0].id')
+[ "$ZONE_ID" != "null" ] || { echo "Zone not found: $ZONE_NAME"; exit 1; }
+echo "  zone id: $ZONE_ID"
+
+echo "→ Existing sending subdomains:"
+EXISTING=$(curl -sS -w "\\n%{http_code}" -H "$AUTH" "$CF/zones/$ZONE_ID/email/sending/subdomains")
+EXISTING_CODE=$(echo "$EXISTING" | tail -1)
+EXISTING_BODY=$(echo "$EXISTING" | sed '$d')
+if [ "$EXISTING_CODE" = "403" ] || [ "$EXISTING_CODE" = "401" ]; then
+  echo "✗ HTTP $EXISTING_CODE from CF API." >&2
+  echo "  Your CLOUDFLARE_API_TOKEN is missing 'Zone : Email Routing : Edit' scope." >&2
+  echo
+  echo "  Two ways to fix:" >&2
+  echo "    a) https://dash.cloudflare.com/profile/api-tokens → edit your token →" >&2
+  echo "       add 'Zone : Email Routing : Edit' for $ZONE_NAME → save → fnox set CLOUDFLARE_API_TOKEN" >&2
+  echo "    b) https://dash.cloudflare.com/?to=/:account/email/sending → Add domain →" >&2
+  echo "       enter '$SUBDOMAIN' (one click since the zone is already on CF)" >&2
+  echo
+  echo "  Either path: code is already correct, deploy is already live, magic-link works after onboarding." >&2
+  exit 1
+fi
+echo "$EXISTING_BODY" | jq '.result // .errors'
+
+echo "→ Creating sending subdomain $SUBDOMAIN (idempotent)..."
+RESP=$(curl -sS -X POST -H "$AUTH" -H "Content-Type: application/json" \
+  --data "{\\"name\\":\\"$SUBDOMAIN\\"}" \
+  "$CF/zones/$ZONE_ID/email/sending/subdomains")
+echo "$RESP" | jq
+
+if echo "$RESP" | jq -e '.success == true' >/dev/null; then
+  echo
+  echo "✓ Onboarded. Update worker/wrangler.toml [env.production.vars]:"
+  echo "  AUTH_EMAIL_FROM = \\"noreply@$SUBDOMAIN\\""
+  echo "  Then: mise run 10-deploy && mise run email:test"
+elif echo "$RESP" | jq -e '.errors[0].code == 10000' >/dev/null; then
+  echo
+  echo "✗ Token missing 'Zone : Email Routing : Edit' scope. Either:" >&2
+  echo "    a) Regenerate CLOUDFLARE_API_TOKEN with Email Routing:Edit scope, then fnox set" >&2
+  echo "    b) Onboard manually in CF dashboard → Email Service → Email Sending → Add domain" >&2
+  exit 1
+fi
+"""
+
+[tasks."email:status"]
+description = "Show sending subdomain status + DNS records CF set up"
+env = { ZONE_NAME = "ubuntusoftware.net" }
+run = """
+set -euo pipefail
+: "${CLOUDFLARE_API_TOKEN:=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+CF="https://api.cloudflare.com/client/v4"
+AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+ZONE_ID=$(curl -fsS -H "$AUTH" "$CF/zones?name=$ZONE_NAME" | jq -r '.result[0].id')
+echo "== Sending subdomains =="
+curl -fsS -H "$AUTH" "$CF/zones/$ZONE_ID/email/sending/subdomains" | jq '.result, .errors'
+echo
+echo "== Sending limits =="
+curl -fsS -H "$AUTH" "$CF/accounts/$(wrangler whoami 2>&1 | grep -oE '[0-9a-f]{32}' | head -1)/email/sending/limits" | jq '.result, .errors'
+"""
+
+[tasks."email:test"]
+description = "Trigger a magic link to a fresh test address and tail the worker logs"
+run = """
+set -euo pipefail
+: "${AUTH_BETTER_PROD_URL:?Set AUTH_BETTER_PROD_URL}"
+EMAIL="emailtest-$(date +%s)@test.ubuntusoftware.net"
+echo "→ Triggering magic link to: $EMAIL"
+echo "  Tail logs in another terminal:  cd worker && wrangler tail --env production"
+sleep 2
+curl -isS -X POST "$AUTH_BETTER_PROD_URL/auth/api/sign-in/magic-link" \
+  -H "Content-Type: application/json" \
+  -H "Origin: $AUTH_BETTER_PROD_URL" \
+  --data "{\\"email\\":\\"$EMAIL\\"}" | head -3
+"""
