@@ -221,6 +221,27 @@ cd worker
 echo "$SECRET_VALUE" | wrangler secret put BETTER_AUTH_SECRET --env production
 """
 
+[tasks."secrets:rotate-better-auth"]
+description = "Rotate BETTER_AUTH_SECRET (invalidates ALL active sessions — every user must re-auth)"
+run = """
+set -euo pipefail
+echo "⚠️  This will invalidate every active session across all consumer apps."
+echo "    Every signed-in user will be forced to re-auth on next request."
+echo
+read -r -p "Type 'rotate' to continue: " CONFIRM
+[ "$CONFIRM" = "rotate" ] || { echo "Aborted."; exit 0; }
+NEW=$(openssl rand -base64 32)
+printf '%s' "$NEW" | fnox set BETTER_AUTH_SECRET --global --provider keychain --stdin
+echo "✓ Saved to fnox."
+cd worker
+printf '%s' "$NEW" | wrangler secret put BETTER_AUTH_SECRET --env production
+echo "✓ Pushed to deployed Worker. New sessions will use the new secret."
+"""
+
+[tasks."secrets:cf:list"]
+description = "List secrets currently set on the deployed Worker (values not shown — wrangler hides them)"
+run = "cd worker && wrangler secret list --env production"
+
 # ── Email Service onboarding ──────────────────────────────────────────────────
 # Cloudflare's NEW Email Service (beta) requires onboarding a sending
 # subdomain (mail.ubuntusoftware.net) before env.SEND_EMAIL.send() can
