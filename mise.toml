@@ -1,8 +1,3 @@
-# Force bash for every task so `set -o pipefail`, `[[ ... ]]`, `read -s`,
-# etc. work on Ubuntu CI runners (where /bin/sh -> dash). On macOS this
-# is a no-op since bash is already default.
-[task_config]
-shell = "bash -c"
 
 [tools]
 pitchfork = "latest"
@@ -53,12 +48,14 @@ FNOX_AGE_KEY_FILE = "~/.config/fnox/age.key"
 
 [tasks.theme]
 description = "Switch web UI theme — usage: mise run theme -- <name>  (neutral|blue|rose|violet|green|orange|...)"
+shell = "bash -c"
 run = "cd web && bun scripts/apply-theme.ts $@"
 
 # ── Phase 1: Coding loop ──────────────────────────────────────────────────────
 
 [tasks."1-install"]
 description = "Phase 1 — Install npm deps (first time only)"
+shell = "bash -c"
 run = """
 cd worker && bun install
 cd ../web  && bun install
@@ -67,22 +64,27 @@ cd ../e2e  && bun install && bunx playwright install chromium
 
 [tasks."2-start"]
 description = "Phase 1 — Start worker (:8792) + web (:5174) via pitchfork"
+shell = "bash -c"
 run = "pitchfork start --all"
 
 [tasks."3-migrate"]
 description = "Phase 1/2 — Create DB schema (idempotent, works for dev or wrangler)"
+shell = "bash -c"
 run = "curl -s -X POST http://localhost:$AUTH_BETTER_PORT/auth/migrate | jq"
 
 [tasks."4-test"]
 description = "Phase 1 — Run Playwright tests against dev servers (:5174)"
+shell = "bash -c"
 run = "cd e2e && WORKERS=1 bunx playwright test"
 
 [tasks."4b-test-worker"]
 description = "Phase 1 — Run worker unit tests (vitest-pool-workers, no dev server needed)"
+shell = "bash -c"
 run = "cd worker && bun run test"
 
 [tasks."4c-wait-worker"]
 description = "Phase 1/2 — Wait for worker health check (up to 30s)"
+shell = "bash -c"
 run = """
 for i in $(seq 1 30); do
   curl -sf "http://127.0.0.1:${AUTH_BETTER_PORT}/health" > /dev/null 2>&1 && exit 0
@@ -93,32 +95,38 @@ echo "Worker did not start on :${AUTH_BETTER_PORT}" && exit 1
 
 [tasks."5-stop"]
 description = "Phase 1 — Stop all pitchfork daemons"
+shell = "bash -c"
 run = "pitchfork stop --all"
 
 # ── Phase 2: Bundle check ─────────────────────────────────────────────────────
 
 [tasks."6-build"]
 description = "Phase 2 — Build web SPA into web/dist/ (required for wrangler asset serving)"
+shell = "bash -c"
 run = "cd web && bun run build"
 
 [tasks."7-start-wrangler"]
 description = "Phase 2 — Start wrangler (foreground) — serves API + built SPA on :8792"
+shell = "bash -c"
 run = "cd worker && wrangler dev"
 
 [tasks."8-test-wrangler"]
 description = "Phase 2 — Run Playwright tests against wrangler (:8792)"
+shell = "bash -c"
 run = "cd e2e && WEB_URL=http://127.0.0.1:$AUTH_BETTER_PORT WORKER_URL=http://127.0.0.1:$AUTH_BETTER_PORT WORKERS=1 bunx playwright test"
 
 [tasks."9-stop-wrangler"]
 description = "Phase 2 — Kill wrangler on :8792"
+shell = "bash -c"
 run = "lsof -ti:$AUTH_BETTER_PORT | xargs kill -9 2>/dev/null || true"
 
 # ── Phase 3: Deploy + verify ──────────────────────────────────────────────────
 
 [tasks."10-deploy"]
 description = "Phase 3 — Build web SPA then deploy worker + assets to Cloudflare. Default env: production. Override: mise run 10-deploy -- --env staging"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ROOT="$(pwd)"
 
 ENV="production"
@@ -164,16 +172,18 @@ cd "${ROOT}/worker" && wrangler deploy --env "$ENV"
 
 [tasks."10b-migrate-prod"]
 description = "Phase 3 — Run DB migrations on Cloudflare production (idempotent)"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 : "${AUTH_BETTER_PROD_URL:?Set AUTH_BETTER_PROD_URL to the deployed worker URL}"
 curl -s -X POST "${AUTH_BETTER_PROD_URL}/auth/migrate" | jq
 """
 
 [tasks."11-test-prod"]
 description = "Phase 3 — Run Playwright tests against deployed Cloudflare worker"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 : "${AUTH_BETTER_PROD_URL:?Set AUTH_BETTER_PROD_URL to the deployed worker URL}"
 cd e2e && WEB_URL="${AUTH_BETTER_PROD_URL}" WORKER_URL="${AUTH_BETTER_PROD_URL}" WORKERS=4 AUTH_TEST_SINK_ENABLED=true bunx playwright test
 """
@@ -182,8 +192,9 @@ cd e2e && WEB_URL="${AUTH_BETTER_PROD_URL}" WORKER_URL="${AUTH_BETTER_PROD_URL}"
 
 [tasks.ci]
 description = "Shortcut — Full Phase 1: stop → 1-install → 2-start → 4c-wait-worker → 3-migrate → 4-test → 4b-test-worker → 5-stop"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 pitchfork stop --all 2>/dev/null || true
 trap 'mise run 5-stop' EXIT
 mise run 1-install
@@ -196,8 +207,9 @@ mise run 4b-test-worker
 
 [tasks."ci-wrangler"]
 description = "Shortcut — Full Phase 2: 9-stop-wrangler → 6-build → wrangler bg → 4c-wait-worker → 3-migrate → 8-test-wrangler → 9-stop-wrangler"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ROOT="$(pwd)"
 mise run 9-stop-wrangler
 trap 'mise run 9-stop-wrangler' EXIT
@@ -210,8 +222,9 @@ mise run 8-test-wrangler
 
 [tasks."ci-prod"]
 description = "Shortcut — Full Phase 3: 10-deploy → 10b-migrate-prod → 11-test-prod"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 : "${AUTH_BETTER_PROD_URL:?Set AUTH_BETTER_PROD_URL to the deployed worker URL}"
 mise run 10-deploy
 mise run 10b-migrate-prod
@@ -225,6 +238,7 @@ mise run 11-test-prod
 
 [tasks."secrets:list"]
 description = "Show the canonical secret mapping (fnox key → GitHub secret name)"
+shell = "bash -c"
 run = """
 echo "Defined in scripts/sync-github-secrets.sh MAPPING table:"
 grep -E '^\\s+"[A-Z_]+\\s+[A-Z_]+"' scripts/sync-github-secrets.sh | sed 's/^/  /'
@@ -235,6 +249,7 @@ echo "secrets are added to fnox (e.g. social provider keys)."
 
 [tasks."secrets:status"]
 description = "Show fnox secrets vs GitHub repo secrets (read-only)"
+shell = "bash -c"
 run = """
 echo "== fnox =="
 fnox list 2>/dev/null || echo "  (no config — run: fnox init --global)"
@@ -245,16 +260,19 @@ gh secret list --repo joeblew999/auth-service 2>/dev/null || echo "  (run: gh au
 
 [tasks."secrets:sync-github"]
 description = "Push secrets from fnox → GitHub Actions repo secrets"
+shell = "bash -c"
 run = "bash scripts/sync-github-secrets.sh"
 
 [tasks."secrets:sync-github-dry"]
 description = "Dry-run of secrets:sync-github (show plan, change nothing)"
+shell = "bash -c"
 run = "bash scripts/sync-github-secrets.sh --dry-run"
 
 [tasks."secrets:put-cf"]
 description = "Push BETTER_AUTH_SECRET from fnox → Cloudflare Worker secret store. Default env: production. Override: -- --env staging"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ENV="production"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -275,8 +293,9 @@ echo "$SECRET_VALUE" | wrangler secret put BETTER_AUTH_SECRET --env "$ENV"
 
 [tasks."secrets:rotate-better-auth"]
 description = "Rotate BETTER_AUTH_SECRET (invalidates ALL active sessions). Default env: production. Override: -- --env staging"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ENV="production"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -300,6 +319,7 @@ echo "✓ Pushed to deployed Worker (env=$ENV). New sessions use the new secret.
 
 [tasks."secrets:cf:list"]
 description = "List secrets currently set on the deployed Worker (values not shown — wrangler hides them)"
+shell = "bash -c"
 run = "cd worker && wrangler secret list --env production"
 
 # ── Email Service onboarding ──────────────────────────────────────────────────
@@ -320,8 +340,9 @@ run = "cd worker && wrangler secret list --env production"
 
 [tasks."cf:provision"]
 description = "Provision Cloudflare D1 + KV for a new env. Reads config/<env>.env (must already define DOMAIN, WORKER_NAME, D1_DATABASE_NAME, KV_NAMESPACE_NAME). Writes the new resource IDs back. Idempotent: skips creation if IDs already filled."
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ENV="${1:-production}"
 [ "$ENV" != "--env" ] || ENV="${2:-production}"
 CFG="config/${ENV}.env"
@@ -387,6 +408,7 @@ echo "    mise run 10-deploy -- --env $ENV"
 
 [tasks."env:list"]
 description = "List every env config (each config/<name>.env file)"
+shell = "bash -c"
 run = """
 echo "Active env: ${MISE_ENV_NAME:-production} (override with: mise run env:use -- <name>)"
 echo
@@ -401,8 +423,9 @@ done
 
 [tasks."env:use"]
 description = "Set the default env for subsequent mise runs (writes to .mise.local.toml). Usage: mise run env:use -- staging"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 NAME="${1:?usage: mise run env:use -- <env-name>}"
 [ -f "config/${NAME}.env" ] || { echo "✗ config/${NAME}.env not found. Copy config/template.env first." >&2; exit 1; }
 cat > .mise.local.toml <<EOF
@@ -416,8 +439,9 @@ echo "✓ Default env set to '${NAME}' (.mise.local.toml). Override per-call wit
 
 [tasks."wrangler:generate"]
 description = "Render worker/wrangler.toml from worker/wrangler.toml.template + config/<env>.env (default env: production). Override with: mise run wrangler:generate -- --env staging"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ENV="production"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -451,8 +475,9 @@ echo "✓ Generated $OUT for env=$ENV"
 
 [tasks."consumer:scaffold"]
 description = "Print copy-paste-ready boilerplate for a NEW Cloudflare Worker that wants to consume this auth-service via Service Bindings. Default env: production. Override: -- --env staging"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ENV="production"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -527,8 +552,9 @@ EOF
 
 [tasks."setup:bootstrap"]
 description = "One command to take a fresh fork from zero to deployed. Walks every prerequisite, calls every other setup task in the right order, asks before each step that costs money or invalidates sessions."
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ENV="${1:-production}"
 [ "$ENV" != "--env" ] || ENV="${2:-production}"
 
@@ -577,8 +603,9 @@ echo "════════════════════════�
 
 [tasks."setup:check"]
 description = "Diagnose dev/deploy prerequisites — tells you what's missing and what to run next. Default env: production. Override: -- --env staging"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ENV="production"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -657,8 +684,9 @@ echo "Result: ok=$ok warn=$warn bad=$bad"
 
 [tasks."fnox:init"]
 description = "Bootstrap fnox for a fresh dev — generates an age keypair, saves to macOS Keychain + ~/.config/fnox/age.key, writes config.toml"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 KEY_FILE="${FNOX_AGE_KEY_FILE:-$HOME/.config/fnox/age.key}"
 CONFIG="$HOME/.config/fnox/config.toml"
 mkdir -p "$(dirname "$KEY_FILE")"
@@ -705,8 +733,9 @@ echo "Next: mise run cf:token:create   # bootstrap your CLOUDFLARE_API_TOKEN"
 
 [tasks."secrets:gen-better-auth"]
 description = "Generate a fresh BETTER_AUTH_SECRET (32-byte random), save to fnox + push to deployed Worker"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 SECRET=$(openssl rand -base64 32)
 printf '%s' "$SECRET" | fnox set BETTER_AUTH_SECRET --global --provider age
 echo "✓ Saved BETTER_AUTH_SECRET to fnox."
@@ -718,8 +747,9 @@ echo "✓ Done."
 
 [tasks."cf:token:check"]
 description = "Verify the current CLOUDFLARE_API_TOKEN has the scopes needed for everything in this repo"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 : "${CLOUDFLARE_API_TOKEN:=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
 [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "✗ CLOUDFLARE_API_TOKEN not set (and not in fnox)"; exit 1; }
 
@@ -744,8 +774,9 @@ RESP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -H "$AUTH" "$CF/zones/$ZONE_
 
 [tasks."cf:token:create"]
 description = "Guide creating a fresh CLOUDFLARE_API_TOKEN with all scopes this repo needs, save to fnox"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 cat <<'EOF'
 
 ────────────────────────────────────────────────────────────────────
@@ -798,8 +829,9 @@ echo "✓ Saved. Run 'mise run cf:token:check' to confirm scopes."
 
 [tasks."cf:turnstile:create"]
 description = "Guide creating a Cloudflare Turnstile widget, save sitekey + secret to fnox, push secret to wrangler"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 cat <<'EOF'
 
 ────────────────────────────────────────────────────────────────────
@@ -856,8 +888,9 @@ echo "rebuild + redeploy."
 
 [tasks."email:onboard"]
 description = "Provision ${SUBDOMAIN_MAIL}.${DOMAIN} as the sending subdomain so CF Email Service accepts arbitrary recipients. Default env: production. Override: -- --env staging"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ENV="production"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -921,8 +954,9 @@ fi
 
 [tasks."email:status"]
 description = "Show sending subdomain status + DNS records CF set up. Default env: production. Override: -- --env staging"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 ENV="production"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -945,8 +979,9 @@ curl -fsS -H "$AUTH" "$CF/accounts/$(wrangler whoami 2>&1 | grep -oE '[0-9a-f]{3
 
 [tasks."email:test"]
 description = "Trigger a magic link to a fresh test address and tail the worker logs"
+shell = "bash -c"
 run = """
-set -euo pipefail
+set -eu
 : "${AUTH_BETTER_PROD_URL:?Set AUTH_BETTER_PROD_URL}"
 EMAIL="emailtest-$(date +%s)@test.ubuntusoftware.net"
 echo "→ Triggering magic link to: $EMAIL"
