@@ -79,7 +79,10 @@ for entry in "${MAPPING[@]}"; do
     if $DRY_RUN; then
       echo "  ✓ $fkey → $gkey  (dry-run, would set ${#value} bytes)"
     else
-      if printf '%s' "$value" | gh secret set "$gkey" --repo "$REPO" --body - >/dev/null 2>&1; then
+      # NOTE: do NOT pass `--body -` — gh treats `-` as the LITERAL value '-',
+      # not "read from stdin". Per `gh secret set --help`: "reads from standard
+      # input if not specified". So omit --body entirely + pipe.
+      if printf '%s' "$value" | gh secret set "$gkey" --repo "$REPO" >/dev/null 2>&1; then
         echo "  ✓ $fkey → $gkey  (${#value} bytes)"
         ok=$((ok+1))
       else
