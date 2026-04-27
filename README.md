@@ -189,13 +189,32 @@ gh auth login    # opens browser; OAuths your GitHub account
 
 ### 4. Set up secrets (fnox + macOS Keychain)
 
-You need `CLOUDFLARE_API_TOKEN` (and optionally `BETTER_AUTH_SECRET`)
-in fnox before deploys can use them. The token bootstrap is wrapped:
+If this is your first time using fnox on this machine:
+
+```sh
+mise run fnox:init         # generates an age keypair, caches in macOS Keychain,
+                           # writes ~/.config/fnox/config.toml
+```
+
+Then bootstrap your CF API token:
 
 ```sh
 mise run cf:token:create   # opens browser, prints exact scopes, saves to fnox
 mise run cf:token:check    # verifies the token has every scope this repo needs
 ```
+
+### 5. Diagnose your setup at any time
+
+One command that walks every prerequisite (toolchain, fnox, secrets,
+auth, prod reachability) and tells you what to run next for any gap:
+
+```sh
+mise run setup:check
+```
+
+Use this whenever something's wrong or before opening a PR — it's the
+single most useful onboarding tool. Exit code is non-zero if anything's
+broken so you can also call it from CI.
 
 That's it. From here on, every command in the repo is `mise run <task>`.
 

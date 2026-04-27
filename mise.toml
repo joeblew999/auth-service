@@ -283,6 +283,130 @@ run = "cd worker && wrangler secret list --env production"
 # (you almost certainly already have it set — that's the same token CF
 # Workers deploy uses).
 
+[tasks."setup:check"]
+description = "Diagnose dev/deploy prerequisites — tells you exactly what's missing and what to run next"
+run = """
+set -euo pipefail
+ok=0; warn=0; bad=0
+say_ok()   { printf '  ✓ %s\\n' "$1"; ok=$((ok+1)); }
+say_warn() { printf '  ⚠  %s\\n' "$1"; warn=$((warn+1)); }
+say_bad()  { printf '  ✗ %s — fix: %s\\n' "$1" "$2"; bad=$((bad+1)); }
+
+echo "== Toolchain (provisioned by mise) =="
+for tool in bun node wrangler fnox age gh pitchfork; do
+  if command -v $tool >/dev/null 2>&1; then
+    say_ok "$tool"
+  else
+    say_bad "$tool not on PATH" "mise install"
+  fi
+done
+
+echo
+echo "== fnox =="
+KEY_PATH="${FNOX_AGE_KEY_FILE:-~/.config/fnox/age.key}"
+KEY_PATH="${KEY_PATH/#\\~/$HOME}"
+if [ -f "$KEY_PATH" ]; then
+  say_ok "age key file exists ($KEY_PATH)"
+else
+  say_bad "age key file missing ($KEY_PATH)" "mise run fnox:init"
+fi
+if fnox list >/dev/null 2>&1; then
+  N=$(fnox list 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
+  say_ok "fnox config readable ($N secrets)"
+else
+  say_bad "fnox can't read config" "mise run fnox:init"
+fi
+
+echo
+echo "== Required secrets in fnox =="
+for k in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+  if fnox get "$k" >/dev/null 2>&1; then say_ok "$k"; else say_bad "$k missing" "mise run cf:token:create"; fi
+done
+
+echo
+echo "== Optional secrets in fnox =="
+for k in BETTER_AUTH_SECRET TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY; do
+  if fnox get "$k" >/dev/null 2>&1; then say_ok "$k"; else say_warn "$k missing (only required for prod deploy)"; fi
+done
+
+echo
+echo "== Auth (browser-OAuth tools) =="
+if gh auth status >/dev/null 2>&1; then say_ok "gh authed"; else say_warn "gh not authed (run: gh auth login)"; fi
+
+echo
+echo "== Production reachability =="
+if curl -fsS -o /dev/null -w '' https://auth.ubuntusoftware.net/health 2>/dev/null; then
+  say_ok "auth.ubuntusoftware.net /health 200"
+else
+  say_warn "prod /health unreachable (only matters if you deployed)"
+fi
+
+echo
+echo "Result: ok=$ok warn=$warn bad=$bad"
+[ "$bad" -eq 0 ] || exit 1
+"""
+
+[tasks."fnox:init"]
+description = "Bootstrap fnox for a fresh dev — generates an age keypair, saves to macOS Keychain + ~/.config/fnox/age.key, writes config.toml"
+run = """
+set -euo pipefail
+KEY_FILE="${FNOX_AGE_KEY_FILE:-$HOME/.config/fnox/age.key}"
+CONFIG="$HOME/.config/fnox/config.toml"
+mkdir -p "$(dirname "$KEY_FILE")"
+
+if [ -f "$KEY_FILE" ]; then
+  echo "✓ age key file already exists at $KEY_FILE — nothing to do."
+  echo "  (To start over, delete it and re-run.)"
+  exit 0
+fi
+
+echo "→ Generating fresh age keypair..."
+age-keygen -o "$KEY_FILE" 2>&1
+chmod 600 "$KEY_FILE"
+RECIPIENT=$(age-keygen -y "$KEY_FILE")
+echo "✓ Public key (recipient): $RECIPIENT"
+
+if command -v security >/dev/null 2>&1; then
+  echo "→ Caching private key in macOS Keychain (service=fnox, account=age-key)..."
+  security add-generic-password -s fnox -a age-key -w "$(cat "$KEY_FILE")" -U 2>&1 || true
+  echo "✓ To restore on a new machine:"
+  echo "    security find-generic-password -s fnox -a age-key -w > $KEY_FILE && chmod 600 $KEY_FILE"
+fi
+
+if [ ! -f "$CONFIG" ]; then
+  cat > "$CONFIG" <<EOF
+# Global fnox config — sourced by every mise project that uses fnox.
+# Encryption: age. Public key is here (safe to commit/share). Private
+# key is at FNOX_AGE_KEY_FILE (set per-project in .mise.toml [env]).
+[providers.age]
+type = "age"
+recipients = ["$RECIPIENT"]
+
+[secrets]
+EOF
+  echo "✓ Wrote $CONFIG with your recipient."
+else
+  echo "⚠  $CONFIG already exists — leaving alone. Make sure recipients includes:"
+  echo "    $RECIPIENT"
+fi
+
+echo
+echo "Next: mise run cf:token:create   # bootstrap your CLOUDFLARE_API_TOKEN"
+"""
+
+[tasks."secrets:gen-better-auth"]
+description = "Generate a fresh BETTER_AUTH_SECRET (32-byte random), save to fnox + push to deployed Worker"
+run = """
+set -euo pipefail
+SECRET=$(openssl rand -base64 32)
+printf '%s' "$SECRET" | fnox set BETTER_AUTH_SECRET --global --provider age
+echo "✓ Saved BETTER_AUTH_SECRET to fnox."
+echo "→ Pushing to deployed Worker (production)..."
+cd worker
+printf '%s' "$SECRET" | wrangler secret put BETTER_AUTH_SECRET --env production
+echo "✓ Done."
+"""
+
 [tasks."cf:token:check"]
 description = "Verify the current CLOUDFLARE_API_TOKEN has the scopes needed for everything in this repo"
 run = """
