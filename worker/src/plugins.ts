@@ -19,6 +19,7 @@ import {
   oneTimeToken,
   username,
   openAPI,
+  haveIBeenPwned,
 } from 'better-auth/plugins';
 // Cloudflare Email Service (new, beta) — uses a plain JSON shape via
 // `env.SEND_EMAIL.send({ to, from, subject, html, text })`. NOT the
@@ -125,5 +126,18 @@ export function getPlugins(env: Bindings) {
 
     // OpenAPI reference UI — /auth/api/reference
     openAPI(),
+
+    // Block compromised passwords on signup / password change / reset.
+    // Uses HIBP's k-anonymity API (only first 5 chars of SHA-1 hash sent
+    // upstream — full hash never leaves this Worker). Zero config, free.
+    haveIBeenPwned(),
+
+    // TODO: Cloudflare Turnstile (captcha plugin). Server-only enable would
+    // BREAK sign-in / sign-up because daveyplate's UI must also render the
+    // Turnstile widget and pass the token. Paired change — wire when adding:
+    //   1. Server:  add `captcha({ provider: 'cloudflare-turnstile', secretKey })`
+    //              + push TURNSTILE_SECRET_KEY via wrangler secret
+    //   2. Client:  pass `captcha={{ provider: 'cloudflare-turnstile', siteKey }}`
+    //              into <AuthUIProvider> in web/ + bake VITE_TURNSTILE_SITE_KEY
   ];
 }
