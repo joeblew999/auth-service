@@ -206,17 +206,75 @@ mise run cf:token:check    # verifies the token has every scope this repo needs
 ### 5. Diagnose your setup at any time
 
 One command that walks every prerequisite (toolchain, fnox, secrets,
-auth, prod reachability) and tells you what to run next for any gap:
+auth, env config, prod reachability) and tells you what to run next
+for any gap:
 
 ```sh
-mise run setup:check
+mise run setup:check                         # default env: production
+mise run setup:check -- --env staging        # diagnose a different env
 ```
 
-Use this whenever something's wrong or before opening a PR — it's the
-single most useful onboarding tool. Exit code is non-zero if anything's
-broken so you can also call it from CI.
+Use this whenever something's wrong or before opening a PR. Exit code
+is non-zero if anything's broken so you can also call it from CI.
 
 That's it. From here on, every command in the repo is `mise run <task>`.
+
+## Multi-env / forking for your own domain
+
+Every value that varies per deployment lives in `config/<env>.env`:
+domain, worker name, D1/KV IDs, GH repo. `worker/wrangler.toml` is
+**generated** from `worker/wrangler.toml.template` + the active env's
+config — never edit it by hand.
+
+This means **one repo, N environments**, fully isolated. Same workflow
+to fork the repo for your own domain or stand up a staging env beside
+production.
+
+### Quick: stand up your own auth-service on a new domain
+
+```sh
+# 1. Make a config for your env (copy + fill the domain/worker name)
+cp config/staging.env.example config/myorg.env
+$EDITOR config/myorg.env       # set DOMAIN=mycompany.com, WORKER_NAME=...
+
+# 2. Provision Cloudflare resources (D1 + KV + writes new IDs back)
+mise run cf:provision -- --env myorg
+
+# 3. Onboard the email subdomain so magic links deliver
+mise run email:onboard -- --env myorg
+
+# 4. Mint + push BETTER_AUTH_SECRET (if not already done in fnox)
+mise run secrets:gen-better-auth
+
+# 5. Deploy
+mise run 10-deploy -- --env myorg
+
+# 6. Verify
+mise run setup:check -- --env myorg
+```
+
+Total: ~5 minutes once `mise run cf:token:create` has been run once
+(your CF token then has the right scopes for everything above).
+
+### Switch your default env
+
+To stop typing `-- --env myorg` every command:
+
+```sh
+mise run env:use -- myorg          # writes .mise.local.toml (gitignored)
+mise run env:list                  # show every env config + which is active
+```
+
+### How it works
+
+- `config/<env>.env` — single source of truth for the env's values
+- `worker/wrangler.toml.template` — Cloudflare config with `${VAR}` placeholders
+- `mise run wrangler:generate -- --env <name>` — envsubst's the template → `worker/wrangler.toml` (gitignored)
+- Every other mise task that touches deploy or CF API takes `-- --env <name>` and re-generates the wrangler.toml first
+
+So an `auth-better-worker` (production) and an `auth-staging-worker`
+(staging) Worker can coexist in the same Cloudflare account. Sessions
+never cross envs (different cookie domain, different DB).
 
 ## Run it (local dev)
 

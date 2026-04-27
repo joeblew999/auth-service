@@ -13,11 +13,6 @@ e2e/playwright-report/
 # Vendored upstream sources
 .src/
 
-# Generated wrangler config (built from worker/wrangler.toml.template +
-# config/<env>.env via `mise run wrangler:generate`). Editing this file
-# directly is wrong — your changes get overwritten next deploy.
-worker/wrangler.toml
-
 # Wrangler local dev secrets — never commit these (real values would
 # leak; placeholder values invite accidental commits when developers
 # replace them locally). Use `wrangler secret put` for production.
@@ -27,3 +22,11 @@ worker/wrangler.toml
 
 # Local Claude Code permission grants — per-machine, not for the repo
 .claude/settings.local.json
+
+# Generated wrangler config (built from worker/wrangler.toml.template +
+# config/<env>.env via `mise run wrangler:generate`). Editing this file
+# directly is wrong — your changes get overwritten next deploy.
+worker/wrangler.toml
+
+# Per-machine mise overrides (e.g. set by `mise run env:use -- staging`).
+.mise.local.toml

@@ -246,24 +246,39 @@ description = "Dry-run of secrets:sync-github (show plan, change nothing)"
 run = "bash scripts/sync-github-secrets.sh --dry-run"
 
 [tasks."secrets:put-cf"]
-description = "Push BETTER_AUTH_SECRET from fnox → Cloudflare Worker secret store (production)"
+description = "Push BETTER_AUTH_SECRET from fnox → Cloudflare Worker secret store. Default env: production. Override: -- --env staging"
 run = """
 set -euo pipefail
+ENV="production"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env) ENV="$2"; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
 SECRET_VALUE=$(fnox get BETTER_AUTH_SECRET 2>/dev/null || true)
 if [ -z "$SECRET_VALUE" ]; then
   echo "BETTER_AUTH_SECRET not in fnox — generate one:" >&2
   echo "  openssl rand -base64 32 | fnox set BETTER_AUTH_SECRET --global --provider age" >&2
   exit 1
 fi
+mise run wrangler:generate -- --env "$ENV"
 cd worker
-echo "$SECRET_VALUE" | wrangler secret put BETTER_AUTH_SECRET --env production
+echo "$SECRET_VALUE" | wrangler secret put BETTER_AUTH_SECRET --env "$ENV"
 """
 
 [tasks."secrets:rotate-better-auth"]
-description = "Rotate BETTER_AUTH_SECRET (invalidates ALL active sessions — every user must re-auth)"
+description = "Rotate BETTER_AUTH_SECRET (invalidates ALL active sessions). Default env: production. Override: -- --env staging"
 run = """
 set -euo pipefail
-echo "⚠️  This will invalidate every active session across all consumer apps."
+ENV="production"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env) ENV="$2"; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+echo "⚠️  This will invalidate every active session in env=$ENV."
 echo "    Every signed-in user will be forced to re-auth on next request."
 echo
 read -r -p "Type 'rotate' to continue: " CONFIRM
@@ -271,9 +286,10 @@ read -r -p "Type 'rotate' to continue: " CONFIRM
 NEW=$(openssl rand -base64 32)
 printf '%s' "$NEW" | fnox set BETTER_AUTH_SECRET --global --provider age
 echo "✓ Saved to fnox."
+mise run wrangler:generate -- --env "$ENV"
 cd worker
-printf '%s' "$NEW" | wrangler secret put BETTER_AUTH_SECRET --env production
-echo "✓ Pushed to deployed Worker. New sessions will use the new secret."
+printf '%s' "$NEW" | wrangler secret put BETTER_AUTH_SECRET --env "$ENV"
+echo "✓ Pushed to deployed Worker (env=$ENV). New sessions use the new secret."
 """
 
 [tasks."secrets:cf:list"]
@@ -295,6 +311,102 @@ run = "cd worker && wrangler secret list --env production"
 # Set the token in fnox once: `fnox set CLOUDFLARE_API_TOKEN --global --provider age`
 # (you almost certainly already have it set — that's the same token CF
 # Workers deploy uses).
+
+[tasks."cf:provision"]
+description = "Provision Cloudflare D1 + KV for a new env. Reads config/<env>.env (must already define DOMAIN, WORKER_NAME, D1_DATABASE_NAME, KV_NAMESPACE_NAME). Writes the new resource IDs back. Idempotent: skips creation if IDs already filled."
+run = """
+set -euo pipefail
+ENV="${1:-production}"
+[ "$ENV" != "--env" ] || ENV="${2:-production}"
+CFG="config/${ENV}.env"
+[ -f "$CFG" ] || { echo "✗ $CFG not found. Copy config/template.env first."; exit 1; }
+
+set -a; source "$CFG"; set +a
+echo "→ Provisioning CF resources for env=$ENV (DOMAIN=$DOMAIN, WORKER=$WORKER_NAME)"
+
+# Force fnox token so wrangler doesn't fall back to expired OAuth.
+if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+  T=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null) || T=""
+  [ -n "$T" ] && export CLOUDFLARE_API_TOKEN="$T"
+fi
+
+# Helper: replace KEY=VALUE in $CFG (or append if missing).
+upsert() {
+  local key="$1" val="$2" file="$CFG"
+  if grep -qE "^${key}=" "$file"; then
+    # POSIX-safe in-place edit (BSD + GNU sed compatible via tmpfile)
+    awk -v k="$key" -v v="$val" 'BEGIN{set=0} {if (\\$0 ~ "^"k"=") {print k"="v; set=1} else print} END{if (!set) print k"="v}' "$file" > "${file}.tmp"
+    mv "${file}.tmp" "$file"
+  else
+    echo "${key}=${val}" >> "$file"
+  fi
+}
+
+# 1. D1 — create if D1_DATABASE_ID empty
+if [ -z "${D1_DATABASE_ID:-}" ] || [ "$D1_DATABASE_ID" = "TBD" ]; then
+  echo "→ Creating D1 database '$D1_DATABASE_NAME'..."
+  RESULT=$(wrangler d1 create "$D1_DATABASE_NAME" 2>&1)
+  echo "$RESULT"
+  ID=$(echo "$RESULT" | grep -Eo '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+  [ -n "$ID" ] || { echo "✗ couldn't parse D1 id from output"; exit 1; }
+  upsert D1_DATABASE_ID "$ID"
+  echo "✓ D1_DATABASE_ID=$ID written to $CFG"
+else
+  echo "✓ D1_DATABASE_ID already set ($D1_DATABASE_ID), skipping create"
+fi
+
+# 2. KV — create if KV_NAMESPACE_ID empty
+if [ -z "${KV_NAMESPACE_ID:-}" ] || [ "$KV_NAMESPACE_ID" = "TBD" ]; then
+  echo "→ Creating KV namespace '$KV_NAMESPACE_NAME'..."
+  RESULT=$(wrangler kv namespace create "$KV_NAMESPACE_NAME" 2>&1)
+  echo "$RESULT"
+  ID=$(echo "$RESULT" | grep -Eo '"[0-9a-f]{32}"' | tr -d '"' | head -1)
+  [ -n "$ID" ] || { echo "✗ couldn't parse KV id from output"; exit 1; }
+  upsert KV_NAMESPACE_ID "$ID"
+  echo "✓ KV_NAMESPACE_ID=$ID written to $CFG"
+else
+  echo "✓ KV_NAMESPACE_ID already set ($KV_NAMESPACE_ID), skipping create"
+fi
+
+# 3. Regenerate wrangler.toml with the new IDs.
+mise run wrangler:generate -- --env "$ENV"
+
+echo
+echo "✓ Provisioning done for env=$ENV. Next:"
+echo "    mise run cf:token:create   # if you don't already have CLOUDFLARE_API_TOKEN with the right scopes"
+echo "    mise run email:onboard -- --env $ENV   # provision the sending subdomain"
+echo "    mise run secrets:gen-better-auth   # mint and push BETTER_AUTH_SECRET"
+echo "    mise run 10-deploy -- --env $ENV"
+"""
+
+[tasks."env:list"]
+description = "List every env config (each config/<name>.env file)"
+run = """
+echo "Active env: ${MISE_ENV_NAME:-production} (override with: mise run env:use -- <name>)"
+echo
+echo "Available envs:"
+for f in config/*.env; do
+  name=$(basename "$f" .env)
+  if [ "$name" = "template" ]; then continue; fi
+  domain=$(grep -E '^DOMAIN=' "$f" | cut -d= -f2)
+  echo "  $name → $domain"
+done
+"""
+
+[tasks."env:use"]
+description = "Set the default env for subsequent mise runs (writes to .mise.local.toml). Usage: mise run env:use -- staging"
+run = """
+set -euo pipefail
+NAME="${1:?usage: mise run env:use -- <env-name>}"
+[ -f "config/${NAME}.env" ] || { echo "✗ config/${NAME}.env not found. Copy config/template.env first." >&2; exit 1; }
+cat > .mise.local.toml <<EOF
+# Generated by `mise run env:use -- ${NAME}`. Gitignored.
+# Sets the default env for tasks that accept --env.
+[env]
+MISE_ENV_NAME = "${NAME}"
+EOF
+echo "✓ Default env set to '${NAME}' (.mise.local.toml). Override per-call with: -- --env <other>"
+"""
 
 [tasks."wrangler:generate"]
 description = "Render worker/wrangler.toml from worker/wrangler.toml.template + config/<env>.env (default env: production). Override with: mise run wrangler:generate -- --env staging"
@@ -332,9 +444,18 @@ echo "✓ Generated $OUT for env=$ENV"
 """
 
 [tasks."setup:check"]
-description = "Diagnose dev/deploy prerequisites — tells you exactly what's missing and what to run next"
+description = "Diagnose dev/deploy prerequisites — tells you what's missing and what to run next. Default env: production. Override: -- --env staging"
 run = """
 set -euo pipefail
+ENV="production"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env) ENV="$2"; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+echo "Checking env=$ENV"
+echo
 ok=0; warn=0; bad=0
 say_ok()   { printf '  ✓ %s\\n' "$1"; ok=$((ok+1)); }
 say_warn() { printf '  ⚠  %s\\n' "$1"; warn=$((warn+1)); }
@@ -382,11 +503,19 @@ echo "== Auth (browser-OAuth tools) =="
 if gh auth status >/dev/null 2>&1; then say_ok "gh authed"; else say_warn "gh not authed (run: gh auth login)"; fi
 
 echo
-echo "== Production reachability =="
-if curl -fsS -o /dev/null -w '' https://auth.ubuntusoftware.net/health 2>/dev/null; then
-  say_ok "auth.ubuntusoftware.net /health 200"
+echo "== Config + reachability for env=$ENV =="
+CFG="config/${ENV}.env"
+if [ -f "$CFG" ]; then
+  say_ok "$CFG exists"
+  set -a; source "$CFG"; set +a
+  AUTH_HOST="${SUBDOMAIN_AUTH}.${DOMAIN}"
+  if curl -fsS -o /dev/null -w '' "https://$AUTH_HOST/health" 2>/dev/null; then
+    say_ok "https://$AUTH_HOST/health 200"
+  else
+    say_warn "https://$AUTH_HOST/health unreachable (only matters if you deployed)"
+  fi
 else
-  say_warn "prod /health unreachable (only matters if you deployed)"
+  say_bad "$CFG missing" "cp config/template.env $CFG and fill in"
 fi
 
 echo
