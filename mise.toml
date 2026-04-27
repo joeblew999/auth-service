@@ -767,7 +767,11 @@ printf 'Workers Scripts edit (deploy:web)...... '
 curl -fsS -H "$AUTH" "$CF/accounts/$(wrangler whoami 2>&1 | grep -oE '[0-9a-f]{32}' | head -1)/workers/scripts" >/dev/null 2>&1 && echo "✓" || echo "✗"
 printf 'Email Sending edit (email:onboard)..... '
 RESP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -H "$AUTH" "$CF/zones/$ZONE_ID/email/sending/subdomains")
-[ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — run: mise run cf:token:create)"
+[ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — add 'Zone : Email Sending : Edit')"
+printf 'Turnstile Sites edit (cf:turnstile:*).. '
+ACCT_ID=$(wrangler whoami 2>&1 | grep -oE '[0-9a-f]{32}' | head -1)
+RESP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -H "$AUTH" "$CF/accounts/$ACCT_ID/challenges/widgets")
+[ "$RESP_CODE" = "200" ] && echo "✓" || echo "✗ (HTTP $RESP_CODE — add 'Account : Turnstile Sites : Edit')"
 """
 
 [tasks."cf:token:create"]
@@ -790,7 +794,8 @@ without you clicking in the dashboard each time):
     • Workers R2 Storage         : Edit       (only if you add R2 later)
     • D1                         : Edit       (auth-better-db migrations)
     • Email Routing Addresses    : Edit       (verified-destinations list)
-    • Email Sending              : Edit       (the critical one — new CF Email Service)
+    • Email Sending              : Edit       (new CF Email Service)
+    • Turnstile Sites            : Edit       (cf:turnstile:* mise tasks)
     • Account Settings           : Read
 
   Zone permissions:
