@@ -77,8 +77,19 @@ export async function createUser(page: any, e: string) {
 
 export async function signInViaUI(page: any, e: string) {
   await page.goto('/auth/sign-in');
-  await page.locator('input[name="email"], input[placeholder*="email" i], input[placeholder*="username" i]').first().fill(e);
-  await page.getByRole('textbox', { name: /password/i }).fill(TEST_PASSWORD);
-  await page.locator('button[type="submit"]').click();
+  await page.locator('input[name="email"]').fill(e);
+  await page.locator('input[name="password"]').fill(TEST_PASSWORD);
+
+  // Wait for the sign-in API response in parallel with the form submit so we
+  // don't race. daveyplate 3.4.0 returns 200 + session cookie but does NOT
+  // auto-navigate to redirectTo (URL just gains '?redirectTo=%2F'). So we
+  // assert the API succeeded, then navigate ourselves.
+  const [resp] = await Promise.all([
+    page.waitForResponse((r: any) => r.url().includes('/sign-in/email') && r.request().method() === 'POST', { timeout: 10000 }),
+    page.getByRole('button', { name: /^login$/i }).click(),
+  ]);
+  expect(resp.status(), 'sign-in API should return 200').toBe(200);
+
+  await page.goto('/');
   await expect(page).not.toHaveURL(/sign-in/);
 }
