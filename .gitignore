@@ -12,3 +12,13 @@ e2e/playwright-report/
 
 # Vendored upstream sources
 .src/
+
+# Wrangler local dev secrets — never commit these (real values would
+# leak; placeholder values invite accidental commits when developers
+# replace them locally). Use `wrangler secret put` for production.
+**/.dev.vars
+**/.dev.vars.*
+!**/.dev.vars.example
+
+# Local Claude Code permission grants — per-machine, not for the repo
+.claude/settings.local.json
