@@ -55,6 +55,16 @@ jobs:
       - name: Install deps (mise run 1-install)
         run: mise run 1-install
 
+      # DIAGNOSTIC — direct CF API probes with the same token + account
+      # that wrangler will use. Tells us EXACTLY which endpoint fails
+      # and why, so we can isolate token-vs-wrangler-vs-network when
+      # the deploy below errors with cryptic 7003.
+      - name: Diagnose CF API access (mise run cf:diag)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: mise run cf:diag
+
       - name: Build + deploy (mise run 10-deploy)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
