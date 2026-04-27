@@ -1,16 +1,19 @@
 
 [tools]
-pitchfork = "latest"
-bun       = "latest"
-node      = "latest"
-wrangler  = "4.84.1"   # 4.85.0 regression: returns 'Could not route 7003' on `wrangler deploy --env <name>` even when token+account+name all valid. Local 4.84.1 + same creds works fine. Pin until upstream fixes it.
-# fnox: secrets manager by jdx (same author as mise). Encrypts at rest with
-# age, key cached in macOS Keychain. Configured globally so the same secrets
-# are available across every project on this machine.
-"github:jdx/fnox"      = "latest"
-"aqua:FiloSottile/age" = "1"
-# GitHub CLI: used by secrets:sync-github. Pinned here so mise stays SSOT.
-"aqua:cli/cli"         = "2"
+# Pin every tool to a specific version. 'latest' bit us with wrangler
+# 4.85.0 (broke deploys silently); now every tool is reproducible across
+# laptop + CI + new dev machines. Bump deliberately, not accidentally.
+node      = "24"            # current LTS-ish, mise resolves to latest 24.x
+bun       = "1.3"           # mise resolves to latest 1.3.x
+pitchfork = "2"             # process supervisor for `dev:all`; mise picks latest 2.x
+wrangler  = "4.84.1"        # exact-pin: 4.85.0 has 'Could not route 7003' regression on `wrangler deploy --env`
+"github:jdx/fnox"      = "1.23"   # secrets manager (same author as mise); 1.23.x is current
+"aqua:FiloSottile/age" = "1"      # age encryption (used by fnox); 1.x stable
+"aqua:cli/cli"         = "2"      # gh CLI; 2.x stable
+# Script dependencies (used by scripts/cf-diag.sh, wrangler:generate, etc).
+# Without these in mise, fresh devs hit cryptic 'command not found'.
+"aqua:jqlang/jq"       = "1"      # JSON parsing (used everywhere)
+"aqua:a8m/envsubst"    = "1"      # template substitution (wrangler.toml.template)
 
 [env]
 AUTH_BETTER_PORT     = "8792"
@@ -584,7 +587,7 @@ say_warn() { printf '  ⚠  %s\\n' "$1"; warn=$((warn+1)); }
 say_bad()  { printf '  ✗ %s — fix: %s\\n' "$1" "$2"; bad=$((bad+1)); }
 
 echo "== Toolchain (provisioned by mise) =="
-for tool in bun node wrangler fnox age gh pitchfork; do
+for tool in bun node wrangler fnox age gh pitchfork jq envsubst; do
   if command -v $tool >/dev/null 2>&1; then
     say_ok "$tool"
   else
