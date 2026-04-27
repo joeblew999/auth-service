@@ -28,7 +28,7 @@ on:
       - '.github/workflows/deploy-mise.yml'
       - 'mise.toml'
       - 'config/**'
-      - 'scripts/cf-diag.sh'
+      - 'scripts/**'
   workflow_dispatch:
 
 concurrency:
@@ -79,3 +79,15 @@ jobs:
           echo "=== /auth/api/get-session (unauthenticated) ==="
           curl -fsSL https://auth.ubuntusoftware.net/auth/api/get-session
           echo
+
+      # End-to-end proof: signs up a fresh user, creates an org, hits the
+      # consumer worker on a different subdomain, asserts role=owner returns.
+      # This catches the failure modes that the unauth smoke above misses:
+      #   - jwks decryption failure after BETTER_AUTH_SECRET rotation (500 on get-session)
+      #   - cookie-domain regressions
+      #   - Service Binding misconfiguration on the consumer side
+      #   - organization plugin behavior changes
+      # Creates one @test.ubuntusoftware.net user per run — periodically purge
+      # via `mise run users:find -- @test.ubuntusoftware.net`.
+      - name: Smoke — prove SSO+RBAC end-to-end (mise run prove:sso-rbac)
+        run: mise run prove:sso-rbac
