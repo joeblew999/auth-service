@@ -8,9 +8,9 @@
     "test": "mise exec -- node node_modules/.bin/vitest run"
   },
   "dependencies": {
-    "@better-auth/api-key": "^1.6.0",
-    "@better-auth/passkey": "^1.6.0",
-    "better-auth": "^1.6",
+    "@better-auth/api-key": "^1.6.9",
+    "@better-auth/passkey": "^1.6.9",
+    "better-auth": "^1.6.9",
     "hono": "^4"
   },
   "devDependencies": {
