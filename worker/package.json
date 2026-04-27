@@ -1,0 +1,22 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "migrate": "curl -s -X POST http://localhost:${AUTH_BETTER_PORT:-8792}/auth/migrate | jq",
+    "typecheck": "tsc --noEmit",
+    "test": "mise exec -- node node_modules/.bin/vitest run"
+  },
+  "dependencies": {
+    "@better-auth/api-key": "^1.6.0",
+    "@better-auth/passkey": "^1.6.0",
+    "better-auth": "^1.6",
+    "hono": "^4"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.14.2",
+    "@cloudflare/workers-types": "^4",
+    "typescript": "^5",
+    "vitest": "^4.1.3"
+  }
+}

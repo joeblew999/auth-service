@@ -1,0 +1,16 @@
+namespace = "auth-better"
+
+[daemons.worker]
+description = "auth-better wrangler worker on :8792"
+run = "wrangler dev"
+dir = "worker"
+mise = true
+ready_output = "Ready on"
+
+[daemons.web]
+description = "auth-better Vite dev server on :5174"
+run = "bun run dev"
+dir = "web"
+mise = true
+ready_output = "ready in"
+depends = ["worker"]

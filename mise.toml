@@ -1,0 +1,158 @@
+[tools]
+pitchfork = "latest"
+bun       = "latest"
+node      = "latest"
+wrangler  = "latest"
+
+[env]
+AUTH_BETTER_PORT     = "8792"
+AUTH_BETTER_WEB_PORT = "5174"
+AUTH_BETTER_PROD_URL = "https://auth-better-worker.gedw99.workers.dev"
+
+# ── Dev workflow ──────────────────────────────────────────────────────────────
+#
+#  Phase 1 — Coding loop (hot-reload dev servers):
+#    1-install → 2-start → 4c-wait-worker → 3-migrate → 4-test → 4b-test-worker → 5-stop
+#
+#  Phase 2 — Bundle check (production-like wrangler, built SPA):
+#    6-build → 7-start-wrangler → 3-migrate → 8-test-wrangler → 9-stop-wrangler
+#
+#  Phase 3 — Deploy + verify (Cloudflare production):
+#    10-deploy → 10b-migrate-prod → 11-test-prod
+#
+#  Shortcuts:
+#    ci            — automates Phase 1 end-to-end
+#    ci-wrangler   — automates Phase 2 end-to-end
+#    ci-prod       — automates Phase 3 end-to-end
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Theme ─────────────────────────────────────────────────────────────────────
+
+[tasks.theme]
+description = "Switch web UI theme — usage: mise run theme -- <name>  (neutral|blue|rose|violet|green|orange|...)"
+run = "cd web && bun scripts/apply-theme.ts $@"
+
+# ── Phase 1: Coding loop ──────────────────────────────────────────────────────
+
+[tasks."1-install"]
+description = "Phase 1 — Install npm deps (first time only)"
+run = """
+cd worker && bun install
+cd ../web  && bun install
+cd ../e2e  && bun install && bunx playwright install chromium
+"""
+
+[tasks."2-start"]
+description = "Phase 1 — Start worker (:8792) + web (:5174) via pitchfork"
+run = "pitchfork start --all"
+
+[tasks."3-migrate"]
+description = "Phase 1/2 — Create DB schema (idempotent, works for dev or wrangler)"
+run = "curl -s -X POST http://localhost:$AUTH_BETTER_PORT/auth/migrate | jq"
+
+[tasks."4-test"]
+description = "Phase 1 — Run Playwright tests against dev servers (:5174)"
+run = "cd e2e && WORKERS=1 bunx playwright test"
+
+[tasks."4b-test-worker"]
+description = "Phase 1 — Run worker unit tests (vitest-pool-workers, no dev server needed)"
+run = "cd worker && bun run test"
+
+[tasks."4c-wait-worker"]
+description = "Phase 1/2 — Wait for worker health check (up to 30s)"
+run = """
+for i in $(seq 1 30); do
+  curl -sf "http://127.0.0.1:${AUTH_BETTER_PORT}/health" > /dev/null 2>&1 && exit 0
+  sleep 1
+done
+echo "Worker did not start on :${AUTH_BETTER_PORT}" && exit 1
+"""
+
+[tasks."5-stop"]
+description = "Phase 1 — Stop all pitchfork daemons"
+run = "pitchfork stop --all"
+
+# ── Phase 2: Bundle check ─────────────────────────────────────────────────────
+
+[tasks."6-build"]
+description = "Phase 2 — Build web SPA into web/dist/ (required for wrangler asset serving)"
+run = "cd web && bun run build"
+
+[tasks."7-start-wrangler"]
+description = "Phase 2 — Start wrangler (foreground) — serves API + built SPA on :8792"
+run = "cd worker && wrangler dev"
+
+[tasks."8-test-wrangler"]
+description = "Phase 2 — Run Playwright tests against wrangler (:8792)"
+run = "cd e2e && WEB_URL=http://127.0.0.1:$AUTH_BETTER_PORT WORKER_URL=http://127.0.0.1:$AUTH_BETTER_PORT WORKERS=1 bunx playwright test"
+
+[tasks."9-stop-wrangler"]
+description = "Phase 2 — Kill wrangler on :8792"
+run = "lsof -ti:$AUTH_BETTER_PORT | xargs kill -9 2>/dev/null || true"
+
+# ── Phase 3: Deploy + verify ──────────────────────────────────────────────────
+
+[tasks."10-deploy"]
+description = "Phase 3 — Build web SPA then deploy worker + assets to Cloudflare production"
+run = """
+set -euo pipefail
+ROOT="$(pwd)"
+(cd "${ROOT}/web" && bun run build)
+cd "${ROOT}/worker" && wrangler deploy --env production
+"""
+
+[tasks."10b-migrate-prod"]
+description = "Phase 3 — Run DB migrations on Cloudflare production (idempotent)"
+run = """
+set -euo pipefail
+: "${AUTH_BETTER_PROD_URL:?Set AUTH_BETTER_PROD_URL to the deployed worker URL}"
+curl -s -X POST "${AUTH_BETTER_PROD_URL}/auth/migrate" | jq
+"""
+
+[tasks."11-test-prod"]
+description = "Phase 3 — Run Playwright tests against deployed Cloudflare worker"
+run = """
+set -euo pipefail
+: "${AUTH_BETTER_PROD_URL:?Set AUTH_BETTER_PROD_URL to the deployed worker URL}"
+cd e2e && WEB_URL="${AUTH_BETTER_PROD_URL}" WORKER_URL="${AUTH_BETTER_PROD_URL}" WORKERS=4 AUTH_TEST_SINK_ENABLED=true bunx playwright test
+"""
+
+# ── Shortcut ──────────────────────────────────────────────────────────────────
+
+[tasks.ci]
+description = "Shortcut — Full Phase 1: stop → 1-install → 2-start → 4c-wait-worker → 3-migrate → 4-test → 4b-test-worker → 5-stop"
+run = """
+set -euo pipefail
+pitchfork stop --all 2>/dev/null || true
+trap 'mise run 5-stop' EXIT
+mise run 1-install
+mise run 2-start
+mise run 4c-wait-worker
+mise run 3-migrate
+mise run 4-test
+mise run 4b-test-worker
+"""
+
+[tasks."ci-wrangler"]
+description = "Shortcut — Full Phase 2: 9-stop-wrangler → 6-build → wrangler bg → 4c-wait-worker → 3-migrate → 8-test-wrangler → 9-stop-wrangler"
+run = """
+set -euo pipefail
+ROOT="$(pwd)"
+mise run 9-stop-wrangler
+trap 'mise run 9-stop-wrangler' EXIT
+mise run 6-build
+(cd "${ROOT}/worker" && wrangler dev) &
+mise run 4c-wait-worker
+mise run 3-migrate
+mise run 8-test-wrangler
+"""
+
+[tasks."ci-prod"]
+description = "Shortcut — Full Phase 3: 10-deploy → 10b-migrate-prod → 11-test-prod"
+run = """
+set -euo pipefail
+: "${AUTH_BETTER_PROD_URL:?Set AUTH_BETTER_PROD_URL to the deployed worker URL}"
+mise run 10-deploy
+mise run 10b-migrate-prod
+mise run 11-test-prod
+"""

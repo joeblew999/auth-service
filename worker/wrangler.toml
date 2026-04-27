@@ -1,0 +1,101 @@
+# ─────────────────────────────────────────────────────────
+# auth-better-worker — minimal better-auth reference backend
+# ─────────────────────────────────────────────────────────
+#
+# Purpose: clean reference implementation — better-auth + all plugins.
+# No zanzo, no R2, no domain schema.
+# Used by auth-better/web/ (React UI) and auth-better/e2e/ (Playwright).
+#
+# Ports:
+#   worker  8792  (existing auth-worker is 8790 — no conflict)
+#   web     5174  (Vite)
+#
+# First-time (local dev — no provisioning needed):
+#   cd auth-better/worker && bun install && wrangler dev
+#   POST http://localhost:8792/auth/migrate  (first run only)
+# ─────────────────────────────────────────────────────────
+
+name = "auth-better-worker"
+main = "src/index.ts"
+compatibility_date = "2025-10-08"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# Static assets — built React SPA served by the worker in production.
+# Run `bun run build` in web/ first.
+[assets]
+directory = "../web/dist"
+not_found_handling = "single-page-application"
+
+# ── Local dev bindings ────────────────────────────────────────────────────────
+# "local" is a wrangler miniflare placeholder — no real Cloudflare IDs needed.
+
+[[d1_databases]]
+binding       = "AUTH_DB"
+database_name = "auth-better-db"
+database_id   = "local"
+
+[[kv_namespaces]]
+binding = "AUTH_KV"
+id      = "local"
+
+[vars]
+# Dev: worker's own URL. Production: set via wrangler secret / dashboard.
+# better-auth uses this for callback URLs, cookie domain, CORS validation.
+BETTER_AUTH_URL = "http://localhost:8792"
+# Vite dev server port — used to build trustedOrigins dynamically.
+# Not set in [env.production] (same-origin in prod, no separate web server).
+AUTH_BETTER_WEB_PORT = "5174"
+# BETTER_AUTH_SECRET — set via: wrangler secret put BETTER_AUTH_SECRET
+# Generate: openssl rand -base64 32
+# Email sender identity — used by magicLink + emailOTP + emailVerification
+AUTH_EMAIL_FROM      = "noreply@ubuntusoftware.net"
+AUTH_EMAIL_FROM_NAME = "Auth"
+# ADR-007: enables GET /auth/test/inbox — dev only, absent in [env.production.vars]
+AUTH_TEST_SINK_ENABLED = "true"
+
+# CF Email Service binding — sends transactional email via native CF binding.
+# No API keys needed. Local dev: wrangler emulates sends (writes .eml to temp dir).
+# Requires Email Routing enabled on ubuntusoftware.net (already configured).
+# ADR-006: https://github.com/joeblew999/auth-service/blob/main/docs/adr/006-cloudflare-email.md
+[[send_email]]
+name = "SEND_EMAIL"
+
+# ── Production ────────────────────────────────────────────────────────────────
+
+[env.production]
+name = "auth-better-worker"
+# Custom domain — cookies set on .ubuntusoftware.net only span subdomains
+# of a real registered domain, not *.workers.dev. Required for any other
+# Worker on the same parent domain to consume the session.
+routes = [
+  { pattern = "auth.ubuntusoftware.net", custom_domain = true },
+]
+
+[env.production.vars]
+BETTER_AUTH_URL        = "https://auth.ubuntusoftware.net"
+AUTH_EMAIL_FROM        = "noreply@ubuntusoftware.net"
+AUTH_EMAIL_FROM_NAME   = "Auth"
+# ADR-007: endpoint only serves @test.ubuntusoftware.net keys — harmless in prod
+AUTH_TEST_SINK_ENABLED = "true"
+# Cross-subdomain SSO — see auth.ts. Leading dot means "this domain and
+# every subdomain"; absence in [vars] means dev cookies stay localhost-scoped.
+COOKIE_DOMAIN          = ".ubuntusoftware.net"
+
+[[env.production.send_email]]
+name = "SEND_EMAIL"
+
+[[env.production.d1_databases]]
+binding       = "AUTH_DB"
+database_name = "auth-better-db"
+database_id   = "69f62edf-88ec-41ef-be41-4dd341b2da0d"
+
+[[env.production.kv_namespaces]]
+binding = "AUTH_KV"
+id      = "476719674e124d6b9f5e70965cb017d0"
+
+[dev]
+ip             = "::"
+port           = 8792   # must match AUTH_BETTER_PORT in mise.toml
+inspector_port = 9233
+local_protocol = "http"

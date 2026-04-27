@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Build output — keep placeholder so wrangler assets validation passes in fresh checkouts
+web/dist/*
+!web/dist/.gitkeep
+worker/.wrangler/
+
+# Test artifacts
+e2e/test-results/
+e2e/playwright-report/
+
+# Vendored upstream sources
+.src/
