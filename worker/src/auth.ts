@@ -84,6 +84,24 @@ export function createAuth(env: Bindings) {
       requireEmailVerification: false,
     },
 
+    // Per-route rate limiting. Defaults to window=60s, max=100 globally.
+    // Tighten the high-risk endpoints (anything that costs us money to send
+    // an email or that a brute-forcer would target) without throttling the
+    // benign get-session reads consumer Workers issue on every page load.
+    rateLimit: {
+      window: 60,                 // global default window (seconds)
+      max: 100,                   // global default
+      customRules: {
+        '/sign-in/email':         { window: 60, max: 5 },
+        '/sign-up/email':         { window: 60, max: 3 },
+        '/sign-in/magic-link':    { window: 60, max: 3 },
+        '/forget-password':       { window: 60, max: 3 },
+        '/reset-password':        { window: 60, max: 5 },
+        '/email-otp/send-verification-otp': { window: 60, max: 3 },
+        '/get-session':           { window: 60, max: 600 }, // hot path, loosen
+      },
+    },
+
     emailVerification: {
       sendVerificationEmail: async ({ user, url }) => {
         await sendEmail(env, user.email, 'Verify your email', `Verify: ${url}`,

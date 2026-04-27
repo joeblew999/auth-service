@@ -53,10 +53,35 @@ async function emailHandler(message: InboundEmail, env: Bindings): Promise<void>
 
 const app = new Hono<{ Bindings: Bindings & { ASSETS: Fetcher } }>();
 
-// ── CORS (dev only — in prod everything is same-origin) ───────────────────────
+// ── CORS — allowlist consumer Workers, NOT reflect-any-origin ─────────────────
+//
+// Service-Binding consumers (ifc-lite-viewer etc.) call /auth/api/* server-to-
+// server with no Origin header — those bypass CORS entirely. Browser-initiated
+// XHR from the React UI hosted on auth.ubuntusoftware.net is same-origin and
+// also bypasses CORS. The only thing CORS gates here is browser XHR FROM
+// consumer apps' frontends. Lock to *.ubuntusoftware.net + dev ports + reject
+// everything else (vs the old `(origin) => origin` which reflected ANY site).
+
+const ALLOWED_ORIGINS = (() => {
+  const exact = new Set([
+    'http://localhost:5174',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:5174',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+  ]);
+  const subdomainAllow = /^https:\/\/[a-z0-9-]+\.ubuntusoftware\.net$/i;
+  return (origin: string | undefined) => {
+    if (!origin) return null;                           // server-to-server, no origin
+    if (exact.has(origin)) return origin;
+    if (subdomainAllow.test(origin)) return origin;
+    return null;                                        // reject anything else
+  };
+})();
 
 app.use('/auth/api/*', cors({
-  origin: (origin) => origin, // reflect origin — BETTER_AUTH_URL handles validation
+  origin: ALLOWED_ORIGINS,
   allowHeaders: ['Content-Type', 'Authorization'],
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true,
