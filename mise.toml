@@ -148,7 +148,7 @@ ENV="$ENV" mise run wrangler:generate
 # every 24h). With the API token set explicitly, wrangler bypasses
 # OAuth entirely. fnox holds the canonical value.
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-  if T=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null) && [ -n "$T" ]; then
+  if T=$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null) && [ -n "$T" ]; then
     export CLOUDFLARE_API_TOKEN="$T"
     echo "→ Using CLOUDFLARE_API_TOKEN from fnox"
   else
@@ -160,7 +160,7 @@ fi
 # to render the captcha widget. Public value, safe to bake into bundle.
 # Skipped silently when absent (captcha not yet onboarded — sign-in still
 # works because the worker also gates on TURNSTILE_SECRET_KEY being set).
-if VITE_TURNSTILE_SITE_KEY=$(fnox get TURNSTILE_SITE_KEY 2>/dev/null); then
+if VITE_TURNSTILE_SITE_KEY=$(mise exec -- fnox get TURNSTILE_SITE_KEY 2>/dev/null); then
   export VITE_TURNSTILE_SITE_KEY
   echo "→ Building with VITE_TURNSTILE_SITE_KEY (captcha UI active)"
 else
@@ -275,7 +275,7 @@ shell = "bash -c"
 run = """
 set -eu
 ENV="${ENV:-production}"
-SECRET_VALUE=$(fnox get BETTER_AUTH_SECRET 2>/dev/null || true)
+SECRET_VALUE=$(mise exec -- fnox get BETTER_AUTH_SECRET 2>/dev/null || true)
 if [ -z "$SECRET_VALUE" ]; then
   echo "BETTER_AUTH_SECRET not in fnox — generate one:" >&2
   echo "  openssl rand -base64 32 | fnox set BETTER_AUTH_SECRET --global --provider age" >&2
@@ -341,7 +341,7 @@ echo "→ Provisioning CF resources for env=$ENV (DOMAIN=$DOMAIN, WORKER=$WORKER
 
 # Force fnox token so wrangler doesn't fall back to expired OAuth.
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-  T=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null) || T=""
+  T=$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null) || T=""
   [ -n "$T" ] && export CLOUDFLARE_API_TOKEN="$T"
 fi
 
@@ -582,11 +582,11 @@ read -r -p "Continue? [y/N] " CONFIRM
 KEY_PATH="${FNOX_AGE_KEY_FILE:-~/.config/fnox/age.key}"
 KEY_PATH="${KEY_PATH/#\\~/$HOME}"
 [ -f "$KEY_PATH" ] || mise run fnox:init
-fnox get CLOUDFLARE_API_TOKEN >/dev/null 2>&1 || mise run cf:token:create
+mise exec -- fnox get CLOUDFLARE_API_TOKEN >/dev/null 2>&1 || mise run cf:token:create
 ENV="$ENV" mise run cf:provision
-fnox get TURNSTILE_SITE_KEY >/dev/null 2>&1 || mise run cf:turnstile:create
+mise exec -- fnox get TURNSTILE_SITE_KEY >/dev/null 2>&1 || mise run cf:turnstile:create
 ENV="$ENV" mise run email:onboard
-fnox get BETTER_AUTH_SECRET >/dev/null 2>&1 || mise run secrets:gen-better-auth
+mise exec -- fnox get BETTER_AUTH_SECRET >/dev/null 2>&1 || mise run secrets:gen-better-auth
 ENV="$ENV" mise run 10-deploy
 ENV="$ENV" mise run setup:check
 
@@ -641,13 +641,13 @@ fi
 echo
 echo "== Required secrets in fnox =="
 for k in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
-  if fnox get "$k" >/dev/null 2>&1; then say_ok "$k"; else say_bad "$k missing" "mise run cf:token:create"; fi
+  if mise exec -- fnox get "$k" >/dev/null 2>&1; then say_ok "$k"; else say_bad "$k missing" "mise run cf:token:create"; fi
 done
 
 echo
 echo "== Optional secrets in fnox =="
 for k in BETTER_AUTH_SECRET TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY; do
-  if fnox get "$k" >/dev/null 2>&1; then say_ok "$k"; else say_warn "$k missing (only required for prod deploy)"; fi
+  if mise exec -- fnox get "$k" >/dev/null 2>&1; then say_ok "$k"; else say_warn "$k missing (only required for prod deploy)"; fi
 done
 
 echo
@@ -748,7 +748,7 @@ description = "Verify the current CLOUDFLARE_API_TOKEN has the scopes needed for
 shell = "bash -c"
 run = """
 set -eu
-: "${CLOUDFLARE_API_TOKEN:=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+: "${CLOUDFLARE_API_TOKEN:=$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
 [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "✗ CLOUDFLARE_API_TOKEN not set (and not in fnox)"; exit 1; }
 
 CF="https://api.cloudflare.com/client/v4"
@@ -894,7 +894,7 @@ CFG="config/${ENV}.env"; set -a; source "$CFG"; set +a
 ZONE_NAME="$DOMAIN"
 SUBDOMAIN="${SUBDOMAIN_MAIL}.${DOMAIN}"
 echo "→ Using env=$ENV: zone=$ZONE_NAME subdomain=$SUBDOMAIN"
-: "${CLOUDFLARE_API_TOKEN:=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+: "${CLOUDFLARE_API_TOKEN:=$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
 [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "CLOUDFLARE_API_TOKEN not set (and not in fnox)"; exit 1; }
 
 CF="https://api.cloudflare.com/client/v4"
@@ -952,7 +952,7 @@ set -eu
 ENV="${ENV:-production}"
 CFG="config/${ENV}.env"; set -a; source "$CFG"; set +a
 ZONE_NAME="$DOMAIN"
-: "${CLOUDFLARE_API_TOKEN:=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
+: "${CLOUDFLARE_API_TOKEN:=$(mise exec -- fnox get CLOUDFLARE_API_TOKEN 2>/dev/null || true)}"
 CF="https://api.cloudflare.com/client/v4"
 AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
 ZONE_ID=$(curl -fsS -H "$AUTH" "$CF/zones?name=$ZONE_NAME" | jq -r '.result[0].id')
