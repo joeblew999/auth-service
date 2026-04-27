@@ -115,6 +115,19 @@ run = """
 set -euo pipefail
 ROOT="$(pwd)"
 
+# Always force-populate CLOUDFLARE_API_TOKEN from fnox so deploys don't
+# silently fall back to wrangler's stored OAuth token (which expires
+# every 24h). With the API token set explicitly, wrangler bypasses
+# OAuth entirely. fnox holds the canonical value.
+if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+  if T=$(fnox get CLOUDFLARE_API_TOKEN 2>/dev/null) && [ -n "$T" ]; then
+    export CLOUDFLARE_API_TOKEN="$T"
+    echo "→ Using CLOUDFLARE_API_TOKEN from fnox (length ${#T})"
+  else
+    echo "→ No CLOUDFLARE_API_TOKEN in fnox — falling back to wrangler OAuth"
+  fi
+fi
+
 # Pull TURNSTILE_SITE_KEY from fnox at build time so the React UI knows
 # to render the captcha widget. Public value, safe to bake into bundle.
 # Skipped silently when absent (captcha not yet onboarded — sign-in still
