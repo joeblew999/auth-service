@@ -103,17 +103,31 @@ Magic-link, email-OTP, and email-verification all flow through
 - `[[send_email]]` binding declared in `worker/wrangler.toml` for both dev and `[env.production]`.
 - `AUTH_EMAIL_FROM = noreply@ubuntusoftware.net` set in production vars.
 
-**What still needs verifying in production** — we are going to need this for
-any flow beyond email+password (password reset, magic-link sign-in, OTP, etc.):
+**One manual step still required** — onboard the sender domain under the
+new Cloudflare Email Service (beta) so it can deliver to **arbitrary
+external recipients** (i.e. real customer addresses):
 
-- [ ] Cloudflare Email Service is in private beta (Sep 2025 launch). Confirm it's enabled on this CF account.
-- [ ] Confirm Email Routing on `ubuntusoftware.net` allows outbound from `noreply@`.
-- [ ] Confirm SPF / DKIM / DMARC DNS records are auto-provisioned by CF for the sender domain.
-- [ ] Send a real magic link (e.g. trigger `/auth/sign-in` with a fresh email) and verify delivery to a real inbox.
+1. Cloudflare dashboard → **Email Service → Email Sending → Add domain**
+2. Pick `ubuntusoftware.net` (already on Cloudflare DNS, so SPF + DKIM + DMARC
+   are auto-provisioned — single-click).
+3. Wait for green status (~1 min).
+4. Trigger a magic link in a test browser — it should deliver to any
+   inbox without further configuration.
 
-Until those are checked: password sign-up works (proven end-to-end), but
-magic-link and OTP flows will silently `console.log` instead of delivering
-to inboxes. Test sink at `/auth/test/inbox?email=foo@test.ubuntusoftware.net`
+Until that one-time step is done, `env.SEND_EMAIL.send()` returns
+`destination address is not a verified address` because the binding is
+still using the **legacy** Email Routing semantics (which require
+recipients to be account-verified destinations). Onboarding flips it
+to the new Email Service backend automatically — no code change needed,
+no `wrangler.toml` change needed.
+
+Reference: [Cloudflare Email Service magic-link example](https://developers.cloudflare.com/email-service/examples/email-sending/magic-link/).
+
+Until then, email-driven flows (`magicLink`, `emailOTP`,
+`emailVerification`) silently fall back to `console.log` — visible in
+`pitchfork logs worker` (dev) or `wrangler tail` (prod). Password sign-up
+works end-to-end without email and is the proven path today. Test sink at
+`/auth/test/inbox?email=foo@test.ubuntusoftware.net`
 ([ADR-007](docs/adr/007-email-test-sink.md)) covers automated tests but
 isn't the same as real-inbox delivery.
 
