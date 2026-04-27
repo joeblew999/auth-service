@@ -5,7 +5,11 @@
 # laptop + CI + new dev machines. Bump deliberately, not accidentally.
 node      = "24"            # current LTS-ish, mise resolves to latest 24.x
 bun       = "1.3"           # mise resolves to latest 1.3.x
-pitchfork = "2"             # process supervisor for `dev:all`; mise picks latest 2.x
+# pitchfork — process supervisor for `dev:all`. Moved to endevco/pitchfork
+# in 2026 (mise's default 'pitchfork' alias still points at the old
+# jdx/pitchfork repo). Use the github backend explicitly to track the
+# active fork.
+"github:endevco/pitchfork" = "2.7"
 wrangler  = "4.84.1"        # exact-pin: 4.85.0 has 'Could not route 7003' regression on `wrangler deploy --env`
 "github:jdx/fnox"      = "1.23"   # secrets manager (same author as mise); 1.23.x is current
 "aqua:FiloSottile/age" = "1"      # age encryption (used by fnox); 1.x stable
