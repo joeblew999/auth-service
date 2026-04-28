@@ -43,7 +43,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       # SSOT: mise installs bun, node, wrangler, pitchfork — same versions
       # as local. No setup-bun / setup-node / setup-wrangler steps.
