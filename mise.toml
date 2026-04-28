@@ -20,6 +20,7 @@ wrangler  = "4.84.1"        # exact-pin: 4.85.0 has 'Could not route 7003' regre
 # Without these in mise, fresh devs hit cryptic 'command not found'.
 "aqua:jqlang/jq"       = "1"      # JSON parsing (used everywhere)
 "aqua:a8m/envsubst"    = "1"      # template substitution (wrangler.toml.template)
+"cargo:usage-cli"      = "3"      # powers #USAGE tab-completion + --help on mise tasks (by jdx)
 
 [env]
 AUTH_BETTER_PORT     = "8792"
