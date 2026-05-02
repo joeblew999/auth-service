@@ -1,6 +1,6 @@
 
 [task_config]
-includes = ["git::https://github.com/joeblew999/.github.git//mise-tasks?ref=v0.9.0"]
+includes = ["git::https://github.com/joeblew999/.github.git//mise-tasks?ref=v0.10.0"]
 
 [tools]
 # Pin every tool to a specific version. 'latest' bit us with wrangler
@@ -8,6 +8,7 @@ includes = ["git::https://github.com/joeblew999/.github.git//mise-tasks?ref=v0.9
 # laptop + CI + new dev machines. Bump deliberately, not accidentally.
 node      = "24"            # current LTS-ish, mise resolves to latest 24.x
 bun       = "1.3"           # mise resolves to latest 1.3.x
+"github:nushell/nushell" = "0.112"  # required by .github/mise-tasks v0.10.0+ (bw:*, secrets:*, cf:*, etc — all nu)
 # pitchfork — process supervisor for `dev:all`. Moved to endevco/pitchfork
 # in 2026 (mise's default 'pitchfork' alias still points at the old
 # jdx/pitchfork repo). Use the github backend explicitly to track the
