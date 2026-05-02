@@ -1,6 +1,6 @@
 
 [task_config]
-includes = ["git::https://github.com/joeblew999/.github.git//mise-tasks?ref=v0.4.0"]
+includes = ["git::https://github.com/joeblew999/.github.git//mise-tasks?ref=v0.9.0"]
 
 [tools]
 # Pin every tool to a specific version. 'latest' bit us with wrangler
