@@ -1,6 +1,25 @@
 
 [task_config]
-includes = ["git::https://github.com/joeblew999/.github.git//mise-tasks?ref=v0.10.0"]
+# Migrated to v0.17.3 TOML-task includes. Per-task tools come along
+# with each shared task; consumer no longer pins gh+jq+envsubst just
+# because shared tasks use them. envsubst dropped entirely — wrangler:gen
+# is now pure nu (no shell substitution).
+#
+# Browseable (clicking the `git::` URL will 404):
+#   https://github.com/joeblew999/.github/blob/v0.17.3/tasks/cf.toml
+#   https://github.com/joeblew999/.github/blob/v0.17.3/tasks/env.toml
+#   https://github.com/joeblew999/.github/blob/v0.17.3/tasks/fnox.toml
+#   https://github.com/joeblew999/.github/blob/v0.17.3/tasks/prove.toml
+#   https://github.com/joeblew999/.github/blob/v0.17.3/tasks/secrets.toml
+#   https://github.com/joeblew999/.github/blob/v0.17.3/tasks/wrangler.toml
+includes = [
+  "git::https://github.com/joeblew999/.github.git//tasks/cf.toml?ref=v0.17.3",
+  "git::https://github.com/joeblew999/.github.git//tasks/env.toml?ref=v0.17.3",
+  "git::https://github.com/joeblew999/.github.git//tasks/fnox.toml?ref=v0.17.3",
+  "git::https://github.com/joeblew999/.github.git//tasks/prove.toml?ref=v0.17.3",
+  "git::https://github.com/joeblew999/.github.git//tasks/secrets.toml?ref=v0.17.3",
+  "git::https://github.com/joeblew999/.github.git//tasks/wrangler.toml?ref=v0.17.3",
+]
 
 [tools]
 # Pin every tool to a specific version. 'latest' bit us with wrangler
@@ -8,20 +27,16 @@ includes = ["git::https://github.com/joeblew999/.github.git//mise-tasks?ref=v0.1
 # laptop + CI + new dev machines. Bump deliberately, not accidentally.
 node      = "24"            # current LTS-ish, mise resolves to latest 24.x
 bun       = "1.3"           # mise resolves to latest 1.3.x
-"github:nushell/nushell" = "0.112"  # required by .github/mise-tasks v0.10.0+ (bw:*, secrets:*, cf:*, etc — all nu)
+"github:nushell/nushell" = "0.112"
 # pitchfork — process supervisor for `dev:all`. Moved to endevco/pitchfork
-# in 2026 (mise's default 'pitchfork' alias still points at the old
-# jdx/pitchfork repo). Use the github backend explicitly to track the
-# active fork.
+# in 2026.
 "github:endevco/pitchfork" = "2.7"
 wrangler  = "4.84.1"        # exact-pin: 4.85.0 has 'Could not route 7003' regression on `wrangler deploy --env`
-"github:jdx/fnox"      = "1.23"   # secrets manager (same author as mise); 1.23.x is current
-"aqua:cli/cli"         = "2"      # gh CLI; 2.x stable
-# Script dependencies (used by scripts/cf-diag.sh, wrangler:generate, etc).
-# Without these in mise, fresh devs hit cryptic 'command not found'.
-"aqua:jqlang/jq"       = "1"      # JSON parsing (used everywhere)
-"aqua:a8m/envsubst"    = "1"      # template substitution (wrangler.toml.template)
+"github:jdx/fnox"      = "1.24"
 "cargo:usage-cli"      = "3"      # powers #USAGE tab-completion + --help on mise tasks (by jdx)
+# Shared-lib tasks (cf:*, env:*, fnox:*, prove:*, secrets:*, wrangler:*)
+# bring their own gh + jq via per-task `tools = { ... }` — no longer
+# pinned here. envsubst dropped: wrangler:gen is now pure nu.
 
 [env]
 AUTH_BETTER_PORT     = "8792"
