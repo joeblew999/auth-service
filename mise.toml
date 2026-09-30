@@ -31,8 +31,8 @@ includes = [
 # Pin every tool to a specific version. 'latest' bit us with wrangler
 # 4.85.0 (broke deploys silently); now every tool is reproducible across
 # laptop + CI + new dev machines. Bump deliberately, not accidentally.
-node      = "24"            # current LTS-ish, mise resolves to latest 24.x
-bun       = "1.3"           # mise resolves to latest 1.3.x
+node      = "24.19.0"            # LTS line; exact pin, bump deliberately
+bun       = "1.3.14"           # exact pin, bump deliberately
 "github:nushell/nushell" = "0.112"
 # pitchfork — process supervisor for `dev:all`. Moved to endevco/pitchfork
 # in 2026.
