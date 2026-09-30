@@ -7,7 +7,7 @@
 #   mise run 6-build     (vite build of web SPA)
 #   mise run 10-deploy   (build + wrangler deploy --env production)
 #
-# Required repo secret (sync from fnox once with: mise run secrets:sync-github):
+# Required repo secret (configure in GitHub repository settings):
 #   CLOUDFLARE_API_TOKEN  — must include 'Workers Scripts : Edit',
 #                           'Workers Routes : Edit', 'D1 : Edit',
 #                           'Workers KV : Edit', 'Account Settings : Read'.

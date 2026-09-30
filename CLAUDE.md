@@ -255,7 +255,7 @@ Per-destination push tasks:
 
 | What | Where it lands | Mise task |
 |---|---|---|
-| `CLOUDFLARE_API_TOKEN` | local env (for wrangler/curl) + GH Actions | `secrets:sync-github` |
+| `CLOUDFLARE_API_TOKEN` | local env (for wrangler/curl) + GH Actions | Configure repository secrets manually; shared sync retired |
 | `BETTER_AUTH_SECRET` | deployed Worker | `secrets:put-cf` |
 | (rotate `BETTER_AUTH_SECRET`) | both | `secrets:rotate-better-auth` |
 | `TURNSTILE_*_KEY` (when added) | deployed Worker + web/ build | TBD when captcha is wired |

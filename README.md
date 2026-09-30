@@ -9,6 +9,12 @@ Service Bindings.
 - React SPA UI: [better-auth-ui/better-auth-ui](https://github.com/better-auth-ui/better-auth-ui) ([docs](https://better-auth-ui.com/integrations/react))
 - Was extracted from `joeblew999/plat-trunk/systems/auth/auth-better` — see ADRs in [`docs/adr/`](docs/adr) for design decisions.
 
+> **Companion repo:** authentication (this repo, Better Auth) pairs with
+> [`authz-core`](https://github.com/joeblew999/authz-core) (Zanzibar-style
+> fine-grained authorization). They are designed to ship together for any
+> Cloudflare project — AuthN here, AuthZ there. Likely to be merged into a
+> single repo in the future; kept separate for now.
+
 ## Live URLs
 
 | Endpoint | URL |
@@ -180,7 +186,7 @@ Manual sign-in:
 
 This repo follows a strict **mise-as-SSOT** convention: install `mise` once,
 and `.mise.toml` provisions every other tool you need (`bun`, `node`,
-`wrangler`, `pitchfork`, `fnox`, `age`, `gh`). Same toolchain CI uses, no
+`wrangler`, `pitchfork`, `fnox`, and the tools listed in `mise.toml`). Same toolchain CI uses, no
 "works-on-my-machine" version skew, no manual installs of 7 different
 package managers.
 
@@ -209,7 +215,7 @@ Restart your shell (or `source ~/.zshrc`).
 ```sh
 git clone https://github.com/joeblew999/auth-service && cd auth-service
 mise trust       # one-time, allow this repo's .mise.toml
-mise install     # downloads bun + node + wrangler + pitchfork + fnox + age + gh
+mise install     # downloads bun + node + wrangler + pitchfork + fnox
 ```
 
 ### 3. Authenticate
@@ -221,12 +227,8 @@ gh auth login    # opens browser; OAuths your GitHub account
 
 ### 4. Set up secrets (fnox + macOS Keychain)
 
-If this is your first time using fnox on this machine:
-
-```sh
-mise run fnox:init         # generates an age keypair, caches in macOS Keychain,
-                           # writes ~/.config/fnox/config.toml
-```
+Configure fnox providers manually before using secrets tasks. The former
+`fnox:init` bootstrap is retired; consult your local fnox configuration.
 
 Then bootstrap your CF API token:
 
@@ -320,7 +322,6 @@ Open <http://localhost:5174>.
 
 ```sh
 mise run 5-stop       # stop everything
-mise run ci           # shortcut: kill → install → start → migrate → test → stop
 ```
 
 ## Test it
@@ -362,10 +363,6 @@ This repo follows the same fnox + age + macOS Keychain SSOT pattern as
 destination per task.
 
 ```sh
-mise run secrets:list             # show the canonical mapping table
-mise run secrets:status           # what's in fnox vs what's in GH repo secrets
-mise run secrets:sync-github-dry  # preview push to GitHub Actions secrets
-mise run secrets:sync-github      # actual push (gh CLI must be authed)
 mise run secrets:put-cf           # push BETTER_AUTH_SECRET → deployed Worker
 ```
 
@@ -384,3 +381,8 @@ the matching rows.
 - Keep this README in sync with `mise.toml`.
 - All e2e tests must pass before deploy.
 - Dog-food everything yourself.
+
+## Mise workflow retirement
+
+The former shared mise automation is retired. See [MISE-RETIREMENT.md](MISE-RETIREMENT.md)
+for removed commands and CI workflows; `mise.toml` contains the remaining local tasks.

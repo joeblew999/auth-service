@@ -1,31 +1,4 @@
-[settings]
-# extends task-inheritance is mise experimental — joeblew999/.github
-# v0.18+ uses it for per-namespace tools dedup (cf:_base, bw:_base, etc).
-experimental = true
-
-
-[task_config]
-# Migrated to v0.17.3 TOML-task includes. Per-task tools come along
-# with each shared task; consumer no longer pins gh+jq+envsubst just
-# because shared tasks use them. envsubst dropped entirely — wrangler:gen
-# is now pure nu (no shell substitution).
-#
-# Browseable (clicking the `git::` URL will 404):
-#   https://github.com/joeblew999/.github/blob/v0.19.1/tasks/cf.toml
-#   https://github.com/joeblew999/.github/blob/v0.19.1/tasks/env.toml
-#   https://github.com/joeblew999/.github/blob/v0.19.1/tasks/fnox.toml
-#   https://github.com/joeblew999/.github/blob/v0.19.1/tasks/prove.toml
-#   https://github.com/joeblew999/.github/blob/v0.19.1/tasks/secrets.toml
-#   https://github.com/joeblew999/.github/blob/v0.19.1/tasks/wrangler.toml
-includes = [
-  "git::https://github.com/joeblew999/.github.git//tasks/ci.toml?ref=v0.33.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/cf.toml?ref=v0.33.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/env.toml?ref=v0.33.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/fnox.toml?ref=v0.33.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/prove.toml?ref=v0.33.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/secrets.toml?ref=v0.33.0",
-  "git::https://github.com/joeblew999/.github.git//tasks/wrangler.toml?ref=v0.33.0",
-]
+# Repository-local tooling. Shared workflows are retired; see MISE-RETIREMENT.md.
 
 [tools]
 # Pin every tool to a specific version. 'latest' bit us with wrangler
@@ -40,9 +13,6 @@ bun       = "1.3.14"           # exact pin, bump deliberately
 wrangler  = "4.84.1"        # exact-pin: 4.85.0 has 'Could not route 7003' regression on `wrangler deploy --env`
 "github:jdx/fnox"      = "1.24.1"
 "cargo:usage-cli"      = "3.6.0"      # powers #USAGE tab-completion + --help on mise tasks (by jdx)
-# Shared-lib tasks (cf:*, env:*, fnox:*, prove:*, secrets:*, wrangler:*)
-# bring their own gh + jq via per-task `tools = { ... }` — no longer
-# pinned here. envsubst dropped: wrangler:gen is now pure nu.
 
 [env]
 AUTH_BETTER_PORT     = "8792"
@@ -53,7 +23,7 @@ AUTH_BETTER_WEB_PORT = "5174"
 # public suffix list).
 AUTH_BETTER_PROD_URL = "https://auth.ubuntusoftware.net"
 
-# Secrets to sync from fnox → GitHub Actions (used by shared secrets:sync-github task).
+# Legacy secret mapping retained for operator reference; automatic sync is retired.
 FNOX_SYNC_KEYS = "CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,BETTER_AUTH_SECRET"
 
 # ── Dev workflow ──────────────────────────────────────────────────────────────
@@ -68,7 +38,6 @@ FNOX_SYNC_KEYS = "CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,BETTER_AUTH_SECRET"
 #    10-deploy → 10b-migrate-prod → 11-test-prod
 #
 #  Shortcuts:
-#    ci            — automates Phase 1 end-to-end
 #    ci-wrangler   — automates Phase 2 end-to-end
 #    ci-prod       — automates Phase 3 end-to-end
 # ─────────────────────────────────────────────────────────────────────────────
@@ -213,21 +182,6 @@ cd e2e && WEB_URL="${AUTH_BETTER_PROD_URL}" WORKER_URL="${AUTH_BETTER_PROD_URL}"
 
 # ── Shortcut ──────────────────────────────────────────────────────────────────
 
-[tasks.ci]
-description = "Shortcut — Full Phase 1: stop → 1-install → 2-start → 4c-wait-worker → 3-migrate → 4-test → 4b-test-worker → 5-stop"
-shell = "bash -c"
-run = """
-set -eu
-pitchfork stop --all 2>/dev/null || true
-trap 'mise run 5-stop' EXIT
-mise run 1-install
-mise run 2-start
-mise run 4c-wait-worker
-mise run 3-migrate
-mise run 4-test
-mise run 4b-test-worker
-"""
-
 [tasks."ci-wrangler"]
 description = "Shortcut — Full Phase 2: 9-stop-wrangler → 6-build → wrangler bg → 4c-wait-worker → 3-migrate → 8-test-wrangler → 9-stop-wrangler"
 shell = "bash -c"
@@ -256,9 +210,7 @@ mise run 11-test-prod
 
 # ── Secrets (fnox → GitHub Actions) ──────────────────────────────────────────
 # https://fnox.jdx.dev — fnox is the local SSOT, backed by macOS Keychain.
-# Shared tasks (secrets:status, secrets:sync-github, secrets:sync-github-dry,
-# secrets:migrate-to-keychain) come from joeblew999/.github via task_config.includes.
-# FNOX_SYNC_KEYS (in [env] above) tells the shared sync task which keys to push.
+# Shared secret synchronization has been retired.
 
 [tasks."secrets:put-cf"]
 description = "Push BETTER_AUTH_SECRET from fnox → Cloudflare Worker secret store. Default env: production. Override: ENV=staging mise run ..."
@@ -566,55 +518,6 @@ Reference implementation:
 EOF
 """
 
-[tasks."setup:bootstrap"]
-description = "One command to take a fresh fork from zero to deployed. Walks every prerequisite, calls every other setup task in the right order, asks before each step that costs money or invalidates sessions."
-shell = "bash -c"
-run = """
-set -eu
-ENV="${1:-production}"
-[ "$ENV" != "--env" ] || ENV="${2:-production}"
-
-echo "════════════════════════════════════════════════════════════════════"
-echo "  setup:bootstrap — fresh fork → live deploy for env=$ENV"
-echo "════════════════════════════════════════════════════════════════════"
-echo
-echo "Prerequisites (you do these once, ever, on this machine):"
-echo "  • install + activate mise"
-echo "  • mise install"
-echo "  • wrangler login + gh auth login"
-echo
-echo "This task will (in order):"
-echo "  1. fnox:init                         (idempotent — sets up keychain provider)"
-echo "  2. cf:token:create                   (skipped if CLOUDFLARE_API_TOKEN already in fnox)"
-echo "  3. cf:provision -- --env $ENV        (skipped if D1/KV IDs already in config/$ENV.env)"
-echo "  4. cf:turnstile:create               (skipped if TURNSTILE_*_KEY already in fnox)"
-echo "  5. email:onboard -- --env $ENV       (creates mail subdomain, idempotent)"
-echo "  6. secrets:gen-better-auth           (only if BETTER_AUTH_SECRET not in fnox)"
-echo "  7. 10-deploy -- --env $ENV"
-echo "  8. setup:check -- --env $ENV"
-echo
-read -r -p "Continue? [y/N] " CONFIRM
-[ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ] || { echo "Aborted."; exit 0; }
-
-mise run fnox:init
-mise exec -- fnox get CLOUDFLARE_API_TOKEN >/dev/null 2>&1 || mise run cf:token:create
-ENV="$ENV" mise run cf:provision
-mise exec -- fnox get TURNSTILE_SITE_KEY >/dev/null 2>&1 || mise run cf:turnstile:create
-ENV="$ENV" mise run email:onboard
-mise exec -- fnox get BETTER_AUTH_SECRET >/dev/null 2>&1 || mise run secrets:gen-better-auth
-ENV="$ENV" mise run 10-deploy
-ENV="$ENV" mise run setup:check
-
-CFG="config/${ENV}.env"; set -a; source "$CFG"; set +a
-echo
-echo "════════════════════════════════════════════════════════════════════"
-echo "  ✓ Done. Your auth service is live at:"
-echo "       https://${SUBDOMAIN_AUTH}.${DOMAIN}"
-echo "  Test it: open the URL, sign up, then verify with:"
-echo "       mise run email:test -- --env $ENV"
-echo "════════════════════════════════════════════════════════════════════"
-"""
-
 [tasks."setup:check"]
 description = "Diagnose dev/deploy prerequisites — tells you what's missing and what to run next. Default env: production. Override: ENV=staging mise run ..."
 shell = "bash -c"
@@ -643,7 +546,7 @@ if fnox list >/dev/null 2>&1; then
   N=$(fnox list 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
   say_ok "fnox config readable ($N secrets)"
 else
-  say_bad "fnox can't read config" "mise run fnox:init"
+  say_bad "fnox can't read config" "configure fnox providers manually (see fnox.toml)"
 fi
 
 echo
@@ -1127,15 +1030,3 @@ fetch('/auth/api/admin/set-user-password', {
 }).then(r => r.json()).then(console.log)
 JS
 """
-
-# ── check ────────────────────────────────────────────────────────────────────
-# Local lint canary — run before every push.
-#   ci:parse-check           parse-checks any nu files in mise-tasks/
-#   ci:check-toml-tasks      parse-checks inline run bodies in tasks/*.toml
-#   ci:check-workflow-nu     parse-checks embedded nu blocks in .github/workflows/*.yml
-# All three are no-ops in repos lacking those files. Adds <2s
-# overhead, catches nu syntax errors locally instead of in CI.
-[tasks.check]
-description = "Local lint: parse-check every nu file + TOML-task body + workflow nu block"
-depends = ["ci:parse-check", "ci:check-toml-tasks", "ci:check-workflow-nu"]
-run = "echo \"✓ check passed\""
